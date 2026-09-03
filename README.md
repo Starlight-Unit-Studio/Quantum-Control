@@ -145,8 +145,8 @@ qcored catalog
 make check
 ```
 
-The check target validates version consistency, formatting, vetting,
-race-enabled tests and both production binaries.
+The check target validates required legal files, version consistency,
+formatting, vetting, race-enabled tests and both production binaries.
 
 ## Documentation
 
@@ -155,13 +155,25 @@ race-enabled tests and both production binaries.
 - `docs/ROADMAP.md`
 - `docs/DEPLOYMENT.md`
 - `docs/SECURITY.md`
+- `docs/LICENSE-POLICY.md`
 - `docs/adr/0001-privileged-broker-boundary.md`
 - `docs/adr/0002-read-only-first.md`
 - `docs/adr/0003-no-unauthenticated-remote-mode.md`
 - `api/openapi.yaml`
 
-## License status
+## License
 
-A project license has not yet been selected. Publication of the source code does
-not grant rights beyond those provided by applicable law until a license is
-added.
+Quantum Control project-owned code is licensed under the **Starlight Unit Studios Quantum Control Community Source License 1.0**.
+
+- private and internal use is royalty-free
+- commercial hosting and managed-service operation are expressly permitted
+- customers may receive authenticated access limited to resources provided or managed for them
+- there is no user, customer, domain, server, or instance limit and no license-enforcement telemetry requirement
+- distributed modifications must retain attribution, provide corresponding source code, and use the same license
+- Quantum Control itself may not be sold, sublicensed, white-labeled, or offered as a standalone paid control-panel, SaaS, or general Control API product
+- installation, administration, maintenance, consulting, support, hosting, hardware, compute, storage, network, and backup charges remain permitted under the license conditions
+- managed and bundled third-party components retain their own terms
+
+The legally controlling German text is in `LICENSE.de.md`. `LICENSE.md` is an English convenience translation. See also `LICENSE_HISTORY.md`, `NOTICE.md`, `COPYRIGHT.md`, `TRADEMARKS.md`, and `THIRD_PARTY_NOTICES.md`.
+
+This is a custom Source Available license and is not an OSI-approved open-source license.
