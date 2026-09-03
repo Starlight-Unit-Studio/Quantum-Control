@@ -12,12 +12,22 @@
 
 ## 0.2 inventory and adoption
 
-- detect existing KeyHelp, Apache/Nginx, PHP-FPM, MariaDB/PostgreSQL, Docker and
-  Quantum Runtime
-- classify components as `managed`, `external` or `disabled`
-- persistent non-secret component state
-- read-only service, port, certificate and storage inventory
-- CoreUI and STU Repack status adapters
+Implemented in `0.2.0-alpha.1`:
+
+- read-only detection of KeyHelp, Apache/Nginx, PHP/PHP-FPM, MariaDB/MySQL, PostgreSQL, Docker/Podman, Ollama, Quantum Runtime, SearXNG, Ember CoreUI and the STΛRLIGHT UNIT Game/Repack
+- versioned component inventory schema and authenticated read API
+- deterministic `managed`, `external`, `disabled` and fail-safe `unknown` states
+- service, filesystem, version, capability, health and detection evidence
+- clean-host, KeyHelp-host and partial-Starlight fixtures
+- fixed probes only, bounded reads and secret-like metadata suppression
+
+Remaining 0.2 work:
+
+- safely map detected listeners/ports to components instead of guessing defaults
+- certificate and storage inventory
+- durable non-secret component cache/state
+- richer CoreUI and STU Repack status adapters
+- identity, authorization and durable audit contracts before any mutation
 
 ## 0.3 transactional service management
 
