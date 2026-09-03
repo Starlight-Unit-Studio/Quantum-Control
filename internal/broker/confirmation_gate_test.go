@@ -12,7 +12,7 @@ func TestConfirmationRequiredOperationCanPlanButCannotExecuteWithArbitraryString
 	registry.register(protocol.OperationDefinition{
 		Action:               "test.confirmed",
 		Summary:              "test-only confirmation boundary",
-		Risk:                 protocol.RiskMedium,
+		Risk:                 protocol.RiskHigh,
 		RequiresConfirmation: true,
 		Implemented:          true,
 	}, func(context.Context, protocol.OperationRequest) (map[string]any, error) {
