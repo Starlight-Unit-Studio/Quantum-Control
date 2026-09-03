@@ -1,0 +1,186 @@
+openapi: 3.1.0
+info:
+  title: Quantum Control API
+  version: 0.1.0-alpha.1
+  description: Public typed administration API for Quantum Control.
+servers:
+  - url: http://127.0.0.1:17440
+paths:
+  /healthz:
+    get:
+      summary: Public process liveness
+      responses:
+        '200':
+          description: Process is alive
+  /readyz:
+    get:
+      summary: Broker readiness
+      responses:
+        '200':
+          description: Broker is reachable
+        '503':
+          description: Broker is unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+  /v1/control/info:
+    get:
+      summary: Product and capability information
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Control information
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /v1/operations:
+    get:
+      summary: Allowlisted operation catalog
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Operation definitions
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '502':
+          $ref: '#/components/responses/BrokerError'
+  /v1/operations/plan:
+    post:
+      summary: Validate and plan a typed operation
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OperationRequest'
+      responses:
+        '200':
+          description: Valid operation plan
+        '400':
+          description: Invalid or rejected operation plan
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '413':
+          description: Request body exceeds the configured limit
+        '502':
+          $ref: '#/components/responses/BrokerError'
+  /v1/operations/execute:
+    post:
+      summary: Execute an implemented allowlisted operation
+      description: Version 0.1.0-alpha.1 contains read-only operations only.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OperationRequest'
+      responses:
+        '200':
+          description: Operation completed
+        '400':
+          description: Operation rejected by policy or validation
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '413':
+          description: Request body exceeds the configured limit
+        '500':
+          description: Allowlisted operation failed
+        '502':
+          $ref: '#/components/responses/BrokerError'
+  /v1/system/status:
+    get:
+      summary: Read bounded system status
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: System snapshot
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          description: Snapshot operation failed
+        '502':
+          $ref: '#/components/responses/BrokerError'
+  /v1/services/{unit}:
+    get:
+      summary: Read systemd unit state
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: unit
+          required: true
+          schema:
+            type: string
+            pattern: '^[A-Za-z0-9][A-Za-z0-9_.@:-]{0,127}$'
+      responses:
+        '200':
+          description: Unit state
+        '400':
+          description: Unit identifier rejected
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          description: Status operation failed
+        '502':
+          $ref: '#/components/responses/BrokerError'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: Optional on loopback, mandatory for every non-loopback listener. Minimum 32 characters when configured.
+  responses:
+    Unauthorized:
+      description: Valid bearer token required
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    BrokerError:
+      description: Privileged broker transport failed
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+  schemas:
+    OperationRequest:
+      type: object
+      required: [action]
+      additionalProperties: false
+      properties:
+        request_id:
+          type: string
+        action:
+          type: string
+        actor:
+          type: string
+          description: Ignored and replaced by the public service.
+        parameters:
+          type: object
+          additionalProperties:
+            type: string
+        confirmation:
+          type: string
+    Problem:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+    ErrorEnvelope:
+      type: object
+      required: [error, request_id]
+      properties:
+        error:
+          $ref: '#/components/schemas/Problem'
+        request_id:
+          type: string

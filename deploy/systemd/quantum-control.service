@@ -1,0 +1,33 @@
+[Unit]
+Description=Quantum Control administration API
+After=network-online.target qcored.service
+Wants=network-online.target
+Requires=qcored.service
+
+[Service]
+Type=simple
+User=quantum-control
+Group=quantum-control
+EnvironmentFile=-/etc/quantum-control/quantum-control.env
+ExecStart=/usr/local/bin/quantum-control serve
+Restart=on-failure
+RestartSec=3s
+
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target
