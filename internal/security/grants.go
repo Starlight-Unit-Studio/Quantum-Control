@@ -68,6 +68,9 @@ func (s *GrantStore) Issue(plan OperationPlan, approver Actor) (GrantResponse, e
 	if !plan.ExpiresAt.After(now) {
 		return GrantResponse{}, errors.New("plan has expired")
 	}
+	if strings.TrimSpace(plan.SessionID) == "" {
+		return GrantResponse{}, errors.New("plan session is required for confirmation")
+	}
 	if approver.Kind != ActorHuman || !HasPermission(approver, PermissionConfirm) {
 		return GrantResponse{}, errors.New("only an authenticated human approver may issue confirmation grants")
 	}
@@ -93,6 +96,7 @@ func (s *GrantStore) Issue(plan OperationPlan, approver Actor) (GrantResponse, e
 		PlanID:         plan.ID,
 		PlanDigest:     plan.Digest,
 		SubjectActorID: plan.Actor.ID,
+		SessionID:      plan.SessionID,
 		Approver:       cloneActor(approver),
 		Action:         plan.Action,
 		IssuedAt:       now,
@@ -131,7 +135,11 @@ func (s *GrantStore) Consume(token string, plan OperationPlan, subjectActorID, a
 		if !grant.ExpiresAt.After(now) {
 			return ConfirmationGrant{}, errors.New("confirmation grant has expired")
 		}
-		if grant.PlanID != plan.ID || !strings.EqualFold(grant.PlanDigest, plan.Digest) || grant.SubjectActorID != subjectActorID || grant.Action != action {
+		if grant.PlanID != plan.ID ||
+			!strings.EqualFold(grant.PlanDigest, plan.Digest) ||
+			grant.SubjectActorID != subjectActorID ||
+			grant.SessionID != plan.SessionID ||
+			grant.Action != action {
 			return ConfirmationGrant{}, errors.New("confirmation grant is not bound to this operation")
 		}
 		stored.Grant.UsedAt = now
@@ -166,7 +174,13 @@ func (s *GrantStore) load() error {
 	}
 	seen := make(map[string]struct{}, len(state.Grants))
 	for _, stored := range state.Grants {
-		if stored.Grant.Schema != GrantSchema || stored.Grant.ID == "" || stored.Grant.PlanID == "" || stored.Grant.PlanDigest == "" {
+		if stored.Grant.Schema != GrantSchema ||
+			stored.Grant.ID == "" ||
+			stored.Grant.PlanID == "" ||
+			stored.Grant.PlanDigest == "" ||
+			stored.Grant.SubjectActorID == "" ||
+			stored.Grant.SessionID == "" ||
+			stored.Grant.Action == "" {
 			return errors.New("confirmation store contains an invalid grant")
 		}
 		if _, exists := seen[stored.Grant.ID]; exists {
