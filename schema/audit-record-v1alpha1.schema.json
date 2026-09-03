@@ -32,6 +32,7 @@
     "action": {"type": "string"},
     "risk": {"type": "string"},
     "status": {"type": "string"},
+    "rollback_status": {"type": "string"},
     "parameters": {"type": "object", "additionalProperties": {"type": "string"}},
     "error_code": {"type": "string"},
     "previous_hash": {"type": "string", "pattern": "^$|^[0-9a-f]{64}$"},
