@@ -15,6 +15,8 @@ const (
 	defaultControlListen = "127.0.0.1:17440"
 	defaultBrokerSocket  = "/run/quantum-control/qcored.sock"
 	defaultTokenFile     = "/etc/quantum-control/broker.token"
+	defaultAuditPath     = "/var/lib/quantum-control/audit/audit.jsonl"
+	defaultGrantPath     = "/var/lib/quantum-control/security/grants.json"
 	defaultBodyLimit     = int64(1 << 20)
 )
 
@@ -22,6 +24,11 @@ const (
 type Control struct {
 	Listen           string
 	APIToken         string
+	ActorFile        string
+	AuditPath        string
+	GrantPath        string
+	PlanTTL          time.Duration
+	GrantTTL         time.Duration
 	BrokerSocket     string
 	BrokerToken      string
 	RequestBodyLimit int64
@@ -60,10 +67,23 @@ func LoadControl() (Control, error) {
 	if err != nil {
 		return Control{}, err
 	}
+	planTTL, err := envDuration("QUANTUM_CONTROL_PLAN_TTL", 5*time.Minute)
+	if err != nil {
+		return Control{}, err
+	}
+	grantTTL, err := envDuration("QUANTUM_CONTROL_GRANT_TTL", 2*time.Minute)
+	if err != nil {
+		return Control{}, err
+	}
 
 	cfg := Control{
 		Listen:           envOr("QUANTUM_CONTROL_LISTEN", defaultControlListen),
 		APIToken:         strings.TrimSpace(os.Getenv("QUANTUM_CONTROL_API_TOKEN")),
+		ActorFile:        strings.TrimSpace(os.Getenv("QUANTUM_CONTROL_ACTOR_FILE")),
+		AuditPath:        envOr("QUANTUM_CONTROL_AUDIT_PATH", defaultAuditPath),
+		GrantPath:        envOr("QUANTUM_CONTROL_GRANT_PATH", defaultGrantPath),
+		PlanTTL:          planTTL,
+		GrantTTL:         grantTTL,
 		BrokerSocket:     envOr("QUANTUM_CONTROL_BROKER_SOCKET", defaultBrokerSocket),
 		BrokerToken:      brokerToken,
 		RequestBodyLimit: bodyLimit,
@@ -121,14 +141,29 @@ func (c Control) Validate() error {
 	if c.APIToken != "" && len(c.APIToken) < 32 {
 		return errors.New("QUANTUM_CONTROL_API_TOKEN must contain at least 32 characters when configured")
 	}
+	if c.ActorFile != "" && !filepath.IsAbs(c.ActorFile) {
+		return errors.New("QUANTUM_CONTROL_ACTOR_FILE must be absolute when configured")
+	}
+	if !filepath.IsAbs(c.AuditPath) {
+		return errors.New("QUANTUM_CONTROL_AUDIT_PATH must be absolute")
+	}
+	if !filepath.IsAbs(c.GrantPath) {
+		return errors.New("QUANTUM_CONTROL_GRANT_PATH must be absolute")
+	}
+	if c.PlanTTL <= 0 || c.PlanTTL > 15*time.Minute {
+		return errors.New("QUANTUM_CONTROL_PLAN_TTL must be greater than zero and at most 15 minutes")
+	}
+	if c.GrantTTL <= 0 || c.GrantTTL > 15*time.Minute {
+		return errors.New("QUANTUM_CONTROL_GRANT_TTL must be greater than zero and at most 15 minutes")
+	}
 	if c.RequestBodyLimit < 1024 {
 		return errors.New("QUANTUM_CONTROL_REQUEST_BODY_LIMIT must be at least 1024 bytes")
 	}
 	if c.HeaderTimeout <= 0 || c.IdleTimeout <= 0 || c.BrokerTimeout <= 0 {
 		return errors.New("control timeouts must be greater than zero")
 	}
-	if !isLoopbackListen(c.Listen) && c.APIToken == "" {
-		return errors.New("non-loopback listen address requires QUANTUM_CONTROL_API_TOKEN")
+	if !isLoopbackListen(c.Listen) && c.APIToken == "" && c.ActorFile == "" {
+		return errors.New("non-loopback listen address requires QUANTUM_CONTROL_API_TOKEN or QUANTUM_CONTROL_ACTOR_FILE")
 	}
 	return nil
 }
