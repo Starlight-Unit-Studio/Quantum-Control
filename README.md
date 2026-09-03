@@ -4,7 +4,7 @@ Quantum Control is the standalone Linux and server administration platform of
 Starlight Unit Studios. It is planned as the reusable KeyHelp replacement for
 the Starlight stack and, later, as a native module of Quantum CoreOS.
 
-Current version: `0.1.0-alpha.1`
+Current version: `0.2.0-alpha.1`
 
 ## Project boundary
 
@@ -16,10 +16,9 @@ Quantum CoreOS will consume released Quantum Control packages and provide
 OS-specific policy, packaging and shell integration. CoreOS will not duplicate
 Control logic or maintain a private fork.
 
-## Current foundation
+## Current alpha
 
-The first implementation establishes the security boundary that every later
-administrative feature must use:
+The security boundary remains:
 
 ```text
 browser / API / TCI
@@ -38,21 +37,23 @@ fixed allowlisted system adapters
 The alpha currently provides:
 
 - separate `quantum-control` and `qcored` processes
-- a protected Unix-socket broker transport
-- a mandatory shared broker token
-- optional bearer-token authentication for the public API
-- refusal to expose an unauthenticated remote listener
-- request correlation IDs and prompt-free access logs
-- a typed operation catalog and validation layer
+- protected Unix-socket broker transport and mandatory broker token
+- loopback-first public API with bearer authentication for remote exposure
+- typed operation catalog, planning and read-only execution
 - read-only `system.snapshot` and `service.status` operations
-- operation planning, audit identifiers and structured results
-- fixed `systemctl` invocation without arbitrary command or argument input
+- versioned read-only component inventory `v1alpha1`
+- authenticated `/v1/components` and `/v1/components/{id}` endpoints
+- fixed probes for KeyHelp, web servers, PHP, databases, container runtimes, Ollama, Quantum Runtime, SearXNG, Ember CoreUI and the STΛRLIGHT UNIT Game/Repack
+- deterministic `managed`, `external`, `disabled` and fail-safe `unknown` ownership states
+- bounded detection evidence, version filtering and health reporting
+- no guessed listener ports: unknown mappings remain an empty listener array until safe socket attribution is implemented
+- request correlation IDs, audit identifiers and structured results
 - systemd hardening examples
-- tests and CI
+- fixtures, race tests and CI
 
-Mutating operations are intentionally absent in this foundation. Domains, TLS,
-databases, containers, backups and updates will be added only as separately
-reviewed typed operations.
+Mutating operations are intentionally absent. Domains, TLS, databases,
+containers, backups and updates will be added only as separately reviewed typed
+operations after the identity, authorization and durable audit gate is complete.
 
 ## Quick start
 
@@ -60,7 +61,7 @@ Requirements:
 
 - Linux or another compatible Unix-like development environment
 - Go 1.23 or newer to build
-- systemd for the current `service.status` adapter
+- systemd for the current `service.status` and service-state inventory probes
 
 Create a local broker token:
 
@@ -94,13 +95,32 @@ curl http://127.0.0.1:17440/healthz
 curl http://127.0.0.1:17440/readyz
 curl http://127.0.0.1:17440/v1/system/status
 curl http://127.0.0.1:17440/v1/services/quantum-runtime.service
+curl http://127.0.0.1:17440/v1/components
+curl http://127.0.0.1:17440/v1/components/quantum-runtime
+```
+
+## Read-only adoption inventory
+
+The inventory is designed for existing KeyHelp servers, ordinary Linux hosts
+and the Starlight stack before Quantum Control owns anything on the machine.
+A detected component is normally `external`. Quantum ownership is claimed only
+when an explicit managed marker and separate runtime evidence agree.
+
+Ambiguous or inaccessible evidence becomes `unknown`, never an optimistic
+`managed` or `disabled` result. Externally owned components are not modified.
+
+The machine-readable schema is:
+
+```text
+schema/component-inventory-v1alpha1.schema.json
 ```
 
 ## Security rule
 
 Quantum Control never accepts model output, user text or API text as a shell
 command. Every administrative request must map to a named allowlisted action
-with individually validated parameters.
+with individually validated parameters. Component inventory uses only fixed
+command names, fixed argument vectors, fixed paths and fixed service probes.
 
 For example:
 
