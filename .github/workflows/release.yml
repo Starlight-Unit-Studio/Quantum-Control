@@ -2,11 +2,6 @@ name: Quantum Control Release
 
 on:
   pull_request:
-    paths:
-      - VERSION
-      - CITATION.cff
-      - docs/RELEASING.md
-      - .github/workflows/release.yml
   push:
     branches:
       - main

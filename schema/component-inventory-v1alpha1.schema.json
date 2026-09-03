@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://starlight-unit.de/schemas/quantum-control/component-inventory-v1alpha1.schema.json",
+  "title": "Quantum Control Component Inventory v1alpha1",
+  "type": "object",
+  "required": ["schema", "observed_at", "components"],
+  "additionalProperties": false,
+  "properties": {
+    "schema": {
+      "const": "quantum.control/component-inventory/v1alpha1"
+    },
+    "observed_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "components": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/component"
+      }
+    }
+  },
+  "$defs": {
+    "component": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id", "name", "category", "version", "ownership", "health",
+        "services", "listeners", "roots", "capabilities", "evidence",
+        "observed_at", "warnings"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
+        },
+        "name": {"type": "string"},
+        "category": {"type": "string"},
+        "version": {"type": "string"},
+        "ownership": {
+          "enum": ["managed", "external", "disabled", "unknown"]
+        },
+        "health": {
+          "enum": ["healthy", "degraded", "disabled", "unknown"]
+        },
+        "services": {
+          "type": "array",
+          "items": {"type": "string"},
+          "uniqueItems": true
+        },
+        "listeners": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["address", "port", "protocol"],
+            "properties": {
+              "address": {"type": "string"},
+              "port": {"type": "integer", "minimum": 1, "maximum": 65535},
+              "protocol": {"type": "string"}
+            }
+          }
+        },
+        "roots": {
+          "type": "array",
+          "items": {"type": "string"},
+          "uniqueItems": true
+        },
+        "capabilities": {
+          "type": "array",
+          "items": {"type": "string"},
+          "uniqueItems": true
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["kind", "source"],
+            "properties": {
+              "kind": {"type": "string"},
+              "source": {"type": "string"},
+              "detail": {"type": "string"}
+            }
+          }
+        },
+        "observed_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "warnings": {
+          "type": "array",
+          "items": {"type": "string"}
+        }
+      }
+    }
+  }
+}

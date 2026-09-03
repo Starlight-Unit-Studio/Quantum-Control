@@ -1,0 +1,30 @@
+{
+  "paths": [
+    "/usr/local/bin/ollama",
+    "/usr/local/bin/quantum-runtime",
+    "/etc/quantum-runtime",
+    "/etc/quantum-runtime/.managed.json",
+    "/opt/ember-coreui"
+  ],
+  "files": {
+    "/opt/ember-coreui/VERSION": "0.5.2-alpha"
+  },
+  "commands": {
+    "ollama --version": "ollama version 0.11.10"
+  },
+  "services": {
+    "ollama.service": {
+      "Unit": "ollama.service",
+      "LoadState": "loaded",
+      "ActiveState": "active",
+      "SubState": "running"
+    },
+    "quantum-runtime.service": {
+      "Unit": "quantum-runtime.service",
+      "LoadState": "loaded",
+      "ActiveState": "active",
+      "SubState": "running"
+    }
+  },
+  "globs": {}
+}

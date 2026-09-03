@@ -4,7 +4,9 @@ Quantum Control releases are generated from the repository `VERSION` file.
 
 ## Release trigger
 
-A merge to `main` that changes `VERSION`, `CITATION.cff`, this document or the release workflow starts `.github/workflows/release.yml`.
+Every pull request runs the release workflow in validation mode. This verifies the source tree and proves that the Linux `amd64` and `arm64` release archives can be built from the exact PR head, but it never publishes a GitHub Release from a pull request.
+
+A push to `main` that changes `VERSION`, `CITATION.cff`, this document or the release workflow starts the publishing form of `.github/workflows/release.yml`.
 
 The workflow:
 
@@ -14,10 +16,8 @@ The workflow:
 4. includes both `quantum-control` and `qcored` in each archive
 5. packages the project legal and notice files
 6. writes `SHA256SUMS`
-7. creates tag `v<VERSION>` and the matching GitHub Release if absent
+7. creates tag `v<VERSION>` and the matching GitHub Release if absent when running on a publishing event
 8. marks versions containing a hyphen as GitHub pre-releases
-
-The pull-request form of the workflow performs validation and archive builds but cannot publish a Release.
 
 ## Zenodo
 

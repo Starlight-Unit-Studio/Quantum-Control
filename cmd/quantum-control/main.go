@@ -56,9 +56,10 @@ func serve() error {
 	slog.SetDefault(logger)
 
 	brokerClient := broker.NewClient(cfg.BrokerSocket, cfg.BrokerToken, cfg.BrokerTimeout)
+	controlServer := control.NewServer(brokerClient, cfg, logger)
 	server := &http.Server{
 		Addr:              cfg.Listen,
-		Handler:           control.NewServer(brokerClient, cfg, logger).Handler(),
+		Handler:           controlServer,
 		ReadHeaderTimeout: cfg.HeaderTimeout,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      cfg.BrokerTimeout + 5*time.Second,

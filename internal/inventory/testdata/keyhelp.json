@@ -1,0 +1,31 @@
+{
+  "paths": [
+    "/etc/keyhelp",
+    "/home/keyhelp",
+    "/etc/apache2",
+    "/etc/php",
+    "/etc/mysql",
+    "/var/lib/mysql"
+  ],
+  "files": {},
+  "commands": {
+    "apache2 -v": "Server version: Apache/2.4.62 (Debian)",
+    "php -v": "PHP 8.3.6 (cli)",
+    "mariadb --version": "mariadb from 11.4.2-MariaDB"
+  },
+  "services": {
+    "apache2.service": {
+      "Unit": "apache2.service",
+      "LoadState": "loaded",
+      "ActiveState": "active",
+      "SubState": "running"
+    },
+    "mariadb.service": {
+      "Unit": "mariadb.service",
+      "LoadState": "loaded",
+      "ActiveState": "active",
+      "SubState": "running"
+    }
+  },
+  "globs": {}
+}

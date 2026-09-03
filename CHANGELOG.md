@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.2.0-alpha.1
+
+First read-only component inventory and adoption foundation.
+
+### Added
+
+- versioned `quantum.control/component-inventory/v1alpha1` schema
+- authenticated `GET /v1/components` and `GET /v1/components/{id}` API routes
+- fixed read-only probes for KeyHelp, Apache, Nginx, PHP/PHP-FPM, MariaDB/MySQL, PostgreSQL, Docker/Podman, Ollama, Quantum Runtime, SearXNG, Ember CoreUI and the STΛRLIGHT UNIT Game/Repack
+- deterministic `managed`, `external`, `disabled` and fail-safe `unknown` ownership states
+- service, filesystem, version, capability, health and evidence reporting
+- explicit empty listener surface until ports can be mapped safely instead of guessed
+- bounded version-file reads and secret-like metadata suppression
+- fixtures for a clean host, a KeyHelp host and a partial Starlight stack
+- stale managed-marker handling that fails to `unknown` rather than claiming ownership
+- API tests proving bearer authentication remains enforced on inventory routes
+
+### Security posture
+
+- inventory performs no service restart, package installation or configuration mutation
+- no caller-provided text is passed to a shell
+- all command names, arguments, paths, globs and unit probes are fixed in code
+- failed or ambiguous observations produce `unknown` rather than optimistic ownership claims
+- raw command failures are not exposed in public inventory responses
+- externally owned services remain observation-only
+
 ## 0.1.0-alpha.1
 
 Initial executable Quantum Control foundation.
