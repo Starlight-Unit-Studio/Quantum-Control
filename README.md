@@ -1,5 +1,7 @@
 # Quantum Control
 
+[![DOI](https://zenodo.org/badge/1356058117.svg)](https://doi.org/10.5281/zenodo.22288120)
+
 Quantum Control is the standalone Linux and server administration platform of
 Starlight Unit Studios. It is planned as the reusable KeyHelp replacement for
 the Starlight stack and, later, as a native module of Quantum CoreOS.
