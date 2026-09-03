@@ -76,6 +76,7 @@ type ConfirmationGrant struct {
 	PlanID         string    `json:"plan_id"`
 	PlanDigest     string    `json:"plan_digest"`
 	SubjectActorID string    `json:"subject_actor_id"`
+	SessionID      string    `json:"session_id"`
 	Approver       Actor     `json:"approver"`
 	Action         string    `json:"action"`
 	IssuedAt       time.Time `json:"issued_at"`
@@ -89,35 +90,37 @@ type GrantResponse struct {
 }
 
 type AuditRecord struct {
-	Schema       string            `json:"schema"`
-	Sequence     uint64            `json:"sequence"`
-	ID           string            `json:"id"`
-	Timestamp    time.Time         `json:"timestamp"`
-	Event        string            `json:"event"`
-	Actor        Actor             `json:"actor"`
-	RequestID    string            `json:"request_id,omitempty"`
-	SessionID    string            `json:"session_id,omitempty"`
-	PlanID       string            `json:"plan_id,omitempty"`
-	PlanDigest   string            `json:"plan_digest,omitempty"`
-	Action       string            `json:"action,omitempty"`
-	Risk         string            `json:"risk,omitempty"`
-	Status       string            `json:"status"`
-	Parameters   map[string]string `json:"parameters,omitempty"`
-	ErrorCode    string            `json:"error_code,omitempty"`
-	PreviousHash string            `json:"previous_hash"`
-	EntryHash    string            `json:"entry_hash"`
+	Schema         string            `json:"schema"`
+	Sequence       uint64            `json:"sequence"`
+	ID             string            `json:"id"`
+	Timestamp      time.Time         `json:"timestamp"`
+	Event          string            `json:"event"`
+	Actor          Actor             `json:"actor"`
+	RequestID      string            `json:"request_id,omitempty"`
+	SessionID      string            `json:"session_id,omitempty"`
+	PlanID         string            `json:"plan_id,omitempty"`
+	PlanDigest     string            `json:"plan_digest,omitempty"`
+	Action         string            `json:"action,omitempty"`
+	Risk           string            `json:"risk,omitempty"`
+	Status         string            `json:"status"`
+	RollbackStatus string            `json:"rollback_status,omitempty"`
+	Parameters     map[string]string `json:"parameters,omitempty"`
+	ErrorCode      string            `json:"error_code,omitempty"`
+	PreviousHash   string            `json:"previous_hash"`
+	EntryHash      string            `json:"entry_hash"`
 }
 
 type AuditEvent struct {
-	Event      string
-	Actor      Actor
-	RequestID  string
-	SessionID  string
-	PlanID     string
-	PlanDigest string
-	Action     string
-	Risk       string
-	Status     string
-	Parameters map[string]string
-	ErrorCode  string
+	Event          string
+	Actor          Actor
+	RequestID      string
+	SessionID      string
+	PlanID         string
+	PlanDigest     string
+	Action         string
+	Risk           string
+	Status         string
+	RollbackStatus string
+	Parameters     map[string]string
+	ErrorCode      string
 }
