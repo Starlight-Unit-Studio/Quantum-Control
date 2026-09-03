@@ -20,12 +20,12 @@ const (
 type Permission string
 
 const (
-	PermissionControlRead       Permission = "control.read"
-	PermissionInventoryRead     Permission = "inventory.read"
+	PermissionControlRead      Permission = "control.read"
+	PermissionInventoryRead    Permission = "inventory.read"
 	PermissionOperationCatalog Permission = "operations.catalog.read"
 	PermissionOperationPlan    Permission = "operations.plan"
 	PermissionOperationExecute Permission = "operations.execute.readonly"
-	PermissionAuditRead         Permission = "audit.read"
+	PermissionAuditRead        Permission = "audit.read"
 	PermissionConfirm          Permission = "operations.confirm"
 	PermissionTCIPropose       Permission = "operations.propose"
 )
