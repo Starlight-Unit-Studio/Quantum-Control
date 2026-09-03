@@ -5,12 +5,13 @@ import (
 	"strings"
 
 	"github.com/Starlight-Unit-Studio/Quantum-Control/internal/inventory"
+	"github.com/Starlight-Unit-Studio/Quantum-Control/internal/security"
 )
 
 var defaultInventoryScanner inventory.Scanner = inventory.NewScanner(nil)
 
 // ServeHTTP adds the read-only component inventory surface while preserving the
-// original broker-backed Handler for all existing routes.
+// broker-backed and security routes for all other requests.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet && (r.URL.Path == "/v1/components" || strings.HasPrefix(r.URL.Path, "/v1/components/")) {
 		s.inventoryHandler(defaultInventoryScanner).ServeHTTP(w, r)
@@ -24,7 +25,7 @@ func (s *Server) inventoryHandler(scanner inventory.Scanner) http.Handler {
 		scanner = inventory.NewScanner(nil)
 	}
 	mux := http.NewServeMux()
-	mux.Handle("GET /v1/components", s.requireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	mux.Handle("GET /v1/components", s.requirePermission(security.PermissionInventoryRead, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		snapshot, err := scanner.Snapshot(r.Context())
 		if err != nil {
 			s.logInventoryFailure(r, "snapshot", err)
@@ -33,7 +34,7 @@ func (s *Server) inventoryHandler(scanner inventory.Scanner) http.Handler {
 		}
 		writeJSON(w, http.StatusOK, snapshot)
 	})))
-	mux.Handle("GET /v1/components/{id}", s.requireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	mux.Handle("GET /v1/components/{id}", s.requirePermission(security.PermissionInventoryRead, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		component, found, err := scanner.Component(r.Context(), r.PathValue("id"))
 		if err != nil {
 			s.logInventoryFailure(r, "component", err)
