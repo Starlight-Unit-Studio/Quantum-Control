@@ -149,12 +149,15 @@ func (a *RegistryAuthenticator) AuthenticateBearer(token string) (Actor, bool) {
 	return Actor{}, false
 }
 
+// LocalReadOnlyActor is used only when the public API is loopback-only and no
+// credential source is configured. It may plan and execute current read-only
+// operations but has no audit-read, confirmation or mutation authority.
 func LocalReadOnlyActor() Actor {
 	actor := Actor{
 		ID:          "service:loopback-readonly",
 		Kind:        ActorService,
 		DisplayName: "Loopback read-only bootstrap",
-		Roles:       []string{"reader"},
+		Roles:       []string{"operator"},
 	}
 	_ = normalizeActor(&actor)
 	return actor
