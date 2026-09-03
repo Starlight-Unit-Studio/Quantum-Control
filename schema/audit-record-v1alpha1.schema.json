@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://starlight-unit.de/schemas/quantum-control/audit-record-v1alpha1.schema.json",
+  "title": "Quantum Control Audit Record v1alpha1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema", "sequence", "id", "timestamp", "event", "actor", "status",
+    "previous_hash", "entry_hash"
+  ],
+  "properties": {
+    "schema": {"const": "quantum.control/audit-record/v1alpha1"},
+    "sequence": {"type": "integer", "minimum": 1},
+    "id": {"type": "string"},
+    "timestamp": {"type": "string", "format": "date-time"},
+    "event": {"type": "string"},
+    "actor": {
+      "type": "object",
+      "required": ["id", "kind", "display_name", "roles", "permissions"],
+      "properties": {
+        "id": {"type": "string"},
+        "kind": {"enum": ["human", "service", "tci"]},
+        "display_name": {"type": "string"},
+        "roles": {"type": "array", "items": {"type": "string"}},
+        "permissions": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "request_id": {"type": "string"},
+    "session_id": {"type": "string"},
+    "plan_id": {"type": "string"},
+    "plan_digest": {"type": "string", "pattern": "^$|^[0-9a-f]{64}$"},
+    "action": {"type": "string"},
+    "risk": {"type": "string"},
+    "status": {"type": "string"},
+    "rollback_status": {"type": "string"},
+    "parameters": {"type": "object", "additionalProperties": {"type": "string"}},
+    "error_code": {"type": "string"},
+    "previous_hash": {"type": "string", "pattern": "^$|^[0-9a-f]{64}$"},
+    "entry_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  }
+}

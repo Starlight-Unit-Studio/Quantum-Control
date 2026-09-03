@@ -4,7 +4,7 @@ Quantum Control is the standalone Linux and server administration platform of
 Starlight Unit Studios. It is planned as the reusable KeyHelp replacement for
 the Starlight stack and, later, as a native module of Quantum CoreOS.
 
-Current version: `0.2.0-alpha.1`
+Current version: `0.2.0-alpha.2`
 
 ## Project boundary
 
@@ -18,27 +18,38 @@ Control logic or maintain a private fork.
 
 ## Current alpha
 
-The security boundary remains:
+The security boundary is:
 
 ```text
-browser / API / TCI
-        |
-quantum-control
-unprivileged public service
-        |
-protected Unix socket
-        |
-qcored
-privileged typed-operation broker
-        |
-fixed allowlisted system adapters
+human / service / future TCI
+            |
+ authenticated actor + permission policy
+            |
+     quantum-control
+     unprivileged API
+            |
+ immutable plan + durable audit
+            |
+ protected Unix socket + broker token
+            |
+          qcored
+ privileged typed-operation broker
+            |
+ fixed allowlisted system adapters
 ```
 
 The alpha currently provides:
 
 - separate `quantum-control` and `qcored` processes
 - protected Unix-socket broker transport and mandatory broker token
-- loopback-first public API with bearer authentication for remote exposure
+- loopback-first public API and authenticated remote exposure
+- actor identities for `human`, `service` and future `tci` clients
+- fixed roles and permission scopes derived server-side
+- TCI proposal access without execution or confirmation authority
+- immutable expiring operation plans with canonical SHA-256 digests
+- durable single-use confirmation grants bound to exact plan/actor/action state
+- append-only hash-chained durable audit with startup integrity verification
+- read-only permission-scoped audit API with no audit mutation endpoints
 - typed operation catalog, planning and read-only execution
 - read-only `system.snapshot` and `service.status` operations
 - versioned read-only component inventory `v1alpha1`
@@ -46,14 +57,14 @@ The alpha currently provides:
 - fixed probes for KeyHelp, web servers, PHP, databases, container runtimes, Ollama, Quantum Runtime, SearXNG, Ember CoreUI and the STΛRLIGHT UNIT Game/Repack
 - deterministic `managed`, `external`, `disabled` and fail-safe `unknown` ownership states
 - bounded detection evidence, version filtering and health reporting
-- no guessed listener ports: unknown mappings remain an empty listener array until safe socket attribution is implemented
-- request correlation IDs, audit identifiers and structured results
-- systemd hardening examples
-- fixtures, race tests and CI
+- no guessed listener ports
+- systemd hardening and protected persistent state directory
+- fixtures, race tests and release-package CI
 
-Mutating operations are intentionally absent. Domains, TLS, databases,
-containers, backups and updates will be added only as separately reviewed typed
-operations after the identity, authorization and durable audit gate is complete.
+Mutating operations are intentionally absent. Any future operation that requires
+confirmation currently fails closed in `qcored` until the structured grant
+verifier is integrated. A caller-provided free-form confirmation string can
+never satisfy that boundary.
 
 ## Quick start
 
@@ -88,7 +99,10 @@ export QUANTUM_CONTROL_BROKER_SOCKET=/tmp/quantum-control-qcored.sock
 ./quantum-control serve
 ```
 
-The public API listens on `127.0.0.1:17440` by default.
+The public API listens on `127.0.0.1:17440` by default. When no actor registry
+or legacy API token is configured on loopback, Quantum Control uses a local
+bootstrap identity that can access only the current read-only operator surface.
+It has no audit-read or confirmation authority.
 
 ```bash
 curl http://127.0.0.1:17440/healthz
@@ -98,6 +112,37 @@ curl http://127.0.0.1:17440/v1/services/quantum-runtime.service
 curl http://127.0.0.1:17440/v1/components
 curl http://127.0.0.1:17440/v1/components/quantum-runtime
 ```
+
+## Actors and TCI
+
+An optional actor registry can identify human administrators, integration
+services and the future Quantum TCI. The registry stores SHA-256 token digests,
+not raw bearer tokens.
+
+The TCI can be assigned the `tci-proposer` role to inspect permitted state and
+create an immutable operation proposal. It cannot receive the approver role,
+execute the current operation endpoint or mint a confirmation grant.
+
+See `config/actors.example.json` and `docs/SECURITY-CONTRACTS.md`.
+
+## Durable audit
+
+The production service writes a hash-chained JSONL audit by default to:
+
+```text
+/var/lib/quantum-control/audit/audit.jsonl
+```
+
+Actors with `audit.read` can query:
+
+```text
+GET /v1/audit
+GET /v1/audit/integrity
+```
+
+There is no public audit write/update/delete API. Secret-like operation
+parameters are redacted and arbitrary backend exception text is not stored in
+durable audit records. See `docs/AUDIT.md`.
 
 ## Read-only adoption inventory
 
@@ -118,20 +163,9 @@ schema/component-inventory-v1alpha1.schema.json
 ## Security rule
 
 Quantum Control never accepts model output, user text or API text as a shell
-command. Every administrative request must map to a named allowlisted action
-with individually validated parameters. Component inventory uses only fixed
-command names, fixed argument vectors, fixed paths and fixed service probes.
-
-For example:
-
-```json
-{
-  "action": "service.status",
-  "parameters": {
-    "unit": "quantum-runtime.service"
-  }
-}
-```
+command. Every administrative request maps to a named allowlisted action with
+individually validated parameters. Public actor fields are overwritten by the
+authenticated identity.
 
 There is no `shell.exec` operation.
 
@@ -141,10 +175,14 @@ See:
 
 - `config/quantum-control.env.example`
 - `config/qcored.env.example`
+- `config/actors.example.json`
 
 For production, both services read the same root-owned broker token file. The
-file should be owned by `root:quantum-control` with mode `0640`. A configured
-public API token must contain at least 32 characters.
+file should be owned by `root:quantum-control` with mode `0640`.
+
+The actor registry, if used, should also be protected and contain only token
+digests. Plan TTL and confirmation-grant TTL are configurable but capped at 15
+minutes.
 
 ## Commands
 
@@ -166,7 +204,8 @@ make check
 ```
 
 The check target validates required legal files, version consistency,
-formatting, vetting, race-enabled tests and both production binaries.
+formatting, vetting, race-enabled tests and both production binaries. Pull
+requests also build the amd64/arm64 release archives without publishing them.
 
 ## Documentation
 
@@ -175,25 +214,20 @@ formatting, vetting, race-enabled tests and both production binaries.
 - `docs/ROADMAP.md`
 - `docs/DEPLOYMENT.md`
 - `docs/SECURITY.md`
+- `docs/SECURITY-CONTRACTS.md`
+- `docs/AUDIT.md`
 - `docs/LICENSE-POLICY.md`
-- `docs/adr/0001-privileged-broker-boundary.md`
-- `docs/adr/0002-read-only-first.md`
-- `docs/adr/0003-no-unauthenticated-remote-mode.md`
 - `api/openapi.yaml`
 
 ## License
 
 Quantum Control project-owned code is licensed under the **Starlight Unit Studios Quantum Control Community Source License 1.0**.
 
-- private and internal use is royalty-free
-- commercial hosting and managed-service operation are expressly permitted
-- customers may receive authenticated access limited to resources provided or managed for them
-- there is no user, customer, domain, server, or instance limit and no license-enforcement telemetry requirement
-- distributed modifications must retain attribution, provide corresponding source code, and use the same license
-- Quantum Control itself may not be sold, sublicensed, white-labeled, or offered as a standalone paid control-panel, SaaS, or general Control API product
-- installation, administration, maintenance, consulting, support, hosting, hardware, compute, storage, network, and backup charges remain permitted under the license conditions
-- managed and bundled third-party components retain their own terms
+Commercial hosting and managed-service operation are permitted under the
+license conditions. Quantum Control itself may not be sold, sublicensed,
+white-labeled or offered as a standalone paid control-panel, SaaS or general
+Control API product. Third-party components retain their own terms.
 
-The legally controlling German text is in `LICENSE.de.md`. `LICENSE.md` is an English convenience translation. See also `LICENSE_HISTORY.md`, `NOTICE.md`, `COPYRIGHT.md`, `TRADEMARKS.md`, and `THIRD_PARTY_NOTICES.md`.
-
-This is a custom Source Available license and is not an OSI-approved open-source license.
+The legally controlling German text is in `LICENSE.de.md`. `LICENSE.md` is an
+English convenience translation. This is a custom Source Available license and
+is not an OSI-approved open-source license.

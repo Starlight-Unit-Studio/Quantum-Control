@@ -12,6 +12,7 @@ func TestControlRejectsUnauthenticatedRemoteBind(t *testing.T) {
 	cfg := validControl()
 	cfg.Listen = "0.0.0.0:17440"
 	cfg.APIToken = ""
+	cfg.ActorFile = ""
 	if err := cfg.Validate(); err == nil {
 		t.Fatal("Validate() accepted unauthenticated remote bind")
 	}
@@ -26,11 +27,46 @@ func TestControlAllowsRemoteBindWithStrongToken(t *testing.T) {
 	}
 }
 
+func TestControlAllowsRemoteBindWithActorRegistry(t *testing.T) {
+	cfg := validControl()
+	cfg.Listen = "0.0.0.0:17440"
+	cfg.ActorFile = "/etc/quantum-control/actors.json"
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() returned error: %v", err)
+	}
+}
+
 func TestControlRejectsShortAPIToken(t *testing.T) {
 	cfg := validControl()
 	cfg.APIToken = "short"
 	if err := cfg.Validate(); err == nil {
 		t.Fatal("Validate() accepted a short API token")
+	}
+}
+
+func TestControlRejectsRelativeSecurityStatePaths(t *testing.T) {
+	cfg := validControl()
+	cfg.AuditPath = "audit.jsonl"
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("Validate() accepted relative audit path")
+	}
+	cfg = validControl()
+	cfg.GrantPath = "grants.json"
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("Validate() accepted relative grant path")
+	}
+}
+
+func TestControlRejectsOverlongSecurityTTL(t *testing.T) {
+	cfg := validControl()
+	cfg.PlanTTL = 16 * time.Minute
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("Validate() accepted overlong plan TTL")
+	}
+	cfg = validControl()
+	cfg.GrantTTL = 16 * time.Minute
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("Validate() accepted overlong grant TTL")
 	}
 }
 
@@ -71,6 +107,10 @@ func TestLoadBrokerRejectsShortEnvironmentToken(t *testing.T) {
 func validControl() Control {
 	return Control{
 		Listen:           "127.0.0.1:17440",
+		AuditPath:        "/var/lib/quantum-control/audit/audit.jsonl",
+		GrantPath:        "/var/lib/quantum-control/security/grants.json",
+		PlanTTL:          5 * time.Minute,
+		GrantTTL:         2 * time.Minute,
 		BrokerSocket:     "/run/quantum-control/qcored.sock",
 		BrokerToken:      testToken,
 		RequestBodyLimit: defaultBodyLimit,

@@ -2,15 +2,16 @@
 
 ## 0.1 security foundation
 
+Implemented:
+
 - split public service and privileged broker
 - typed operation protocol
 - Unix socket and broker authentication
 - read-only system and service probes
-- operation plans, audit identifiers and structured errors
 - secure listener defaults
 - tests and CI
 
-## 0.2 inventory and adoption
+## 0.2 inventory, adoption and pre-mutation security
 
 Implemented in `0.2.0-alpha.1`:
 
@@ -21,21 +22,38 @@ Implemented in `0.2.0-alpha.1`:
 - clean-host, KeyHelp-host and partial-Starlight fixtures
 - fixed probes only, bounded reads and secret-like metadata suppression
 
-Remaining 0.2 work:
+Implemented in `0.2.0-alpha.2`:
+
+- authenticated human, service and future TCI actor contracts
+- fixed roles and explicit permission scopes
+- immutable expiring plan snapshots with exact canonical SHA-256 digests
+- durable single-use confirmation grants bound to reviewed plans
+- append-only hash-chained durable audit with secret redaction
+- permission-scoped read-only audit API
+- TCI proposal-only role boundary without confirmation or execution authority
+- broker fail-closed gate for every future confirmation-required operation until structured grant verification is connected
+- threat-model, retention, export and recovery documentation
+
+Remaining read-only/adoption work may proceed independently:
 
 - safely map detected listeners/ports to components instead of guessing defaults
 - certificate and storage inventory
 - durable non-secret component cache/state
 - richer CoreUI and STU Repack status adapters
-- identity, authorization and durable audit contracts before any mutation
 
 ## 0.3 transactional service management
 
-- explicit service start/stop/restart actions
-- role and confirmation policy
+The first mutating milestone may begin only after `0.2.0-alpha.2` is merged and verified.
+
+Planned:
+
+- broker-side structured confirmation-grant verifier
+- explicit `service.start`, `service.stop` and `service.restart` actions
+- per-action role and confirmation policy
 - maintenance windows
 - precondition and postcondition health checks
-- durable audit records
+- durable audit records for proposal, approval, attempt and result
+- rollback/recovery behavior
 - no generic command execution
 
 ## 0.4 web and TLS management

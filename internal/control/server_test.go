@@ -46,7 +46,11 @@ func (f *fakeBroker) Plan(_ context.Context, request protocol.OperationRequest) 
 	if f.planValid != nil {
 		valid = *f.planValid
 	}
-	plan := protocol.OperationPlan{Request: request, Valid: valid}
+	plan := protocol.OperationPlan{
+		Request:    request,
+		Definition: protocol.OperationDefinition{Action: request.Action, Risk: protocol.RiskReadOnly, Implemented: true},
+		Valid:      valid,
+	}
 	if !valid {
 		plan.Error = &protocol.Problem{Code: "unknown_action", Message: "action is not allowlisted"}
 	}
@@ -113,7 +117,7 @@ func TestSystemStatusUsesTypedBrokerAction(t *testing.T) {
 	if err := json.NewDecoder(response.Body).Decode(&result); err != nil {
 		t.Fatal(err)
 	}
-	if result["hostname"] != "node-1" || broker.last.Action != "system.snapshot" || broker.last.Actor != "quantum-control-api" {
+	if result["hostname"] != "node-1" || broker.last.Action != "system.snapshot" || broker.last.Actor != "service:loopback-readonly" {
 		t.Fatalf("unexpected result/request: %#v %#v", result, broker.last)
 	}
 	if broker.last.RequestID == "" {
@@ -237,6 +241,10 @@ func testConfig(token string) config.Control {
 	return config.Control{
 		Listen:           "127.0.0.1:17440",
 		APIToken:         token,
+		AuditPath:        "/tmp/quantum-control-audit-test.jsonl",
+		GrantPath:        "/tmp/quantum-control-grants-test.json",
+		PlanTTL:          5 * time.Minute,
+		GrantTTL:         2 * time.Minute,
 		BrokerSocket:     "/tmp/qcored.sock",
 		BrokerToken:      testAPIToken,
 		RequestBodyLimit: 1 << 20,

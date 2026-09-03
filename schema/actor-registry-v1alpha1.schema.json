@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://starlight-unit.de/schemas/quantum-control/actor-registry-v1alpha1.schema.json",
+  "title": "Quantum Control Actor Registry v1alpha1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "actors"],
+  "properties": {
+    "schema": {"const": "quantum.control/actors/v1alpha1"},
+    "actors": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["actor", "token_sha256"],
+        "properties": {
+          "actor": {"$ref": "#/$defs/actor"},
+          "token_sha256": {"type": "string", "pattern": "^[0-9a-fA-F]{64}$"}
+        }
+      }
+    }
+  },
+  "$defs": {
+    "actor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "display_name", "roles", "permissions"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z][a-z0-9.-]{1,31}:[A-Za-z0-9][A-Za-z0-9_.@:-]{0,95}$"},
+        "kind": {"enum": ["human", "service", "tci"]},
+        "display_name": {"type": "string", "minLength": 1, "maxLength": 160},
+        "roles": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"enum": ["reader", "operator", "auditor", "approver", "tci-proposer", "service"]}
+        },
+        "permissions": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "control.read",
+              "inventory.read",
+              "operations.catalog.read",
+              "operations.plan",
+              "operations.execute.readonly",
+              "audit.read",
+              "operations.confirm",
+              "operations.propose"
+            ]
+          }
+        }
+      }
+    }
+  }
+}

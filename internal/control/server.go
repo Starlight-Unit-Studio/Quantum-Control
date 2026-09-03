@@ -3,7 +3,6 @@ package control
 import (
 	"context"
 	"crypto/rand"
-	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -18,21 +17,33 @@ import (
 	"github.com/Starlight-Unit-Studio/Quantum-Control/internal/buildinfo"
 	"github.com/Starlight-Unit-Studio/Quantum-Control/internal/config"
 	"github.com/Starlight-Unit-Studio/Quantum-Control/internal/protocol"
+	"github.com/Starlight-Unit-Studio/Quantum-Control/internal/security"
 )
 
 // Server is the unprivileged public API layer. It can request only operations
-// published by qcored.
+// published by qcored and applies actor/permission policy before broker access.
 type Server struct {
-	broker broker.API
-	cfg    config.Control
-	logger *slog.Logger
+	broker   broker.API
+	cfg      config.Control
+	logger   *slog.Logger
+	security SecurityDependencies
 }
 
 func NewServer(client broker.API, cfg config.Control, logger *slog.Logger) *Server {
+	return NewServerWithSecurity(client, cfg, logger, defaultSecurityDependencies(cfg))
+}
+
+func NewServerWithSecurity(client broker.API, cfg config.Control, logger *slog.Logger, dependencies SecurityDependencies) *Server {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &Server{broker: client, cfg: cfg, logger: logger}
+	if dependencies.Plans == nil {
+		dependencies.Plans = security.NewPlanCache()
+	}
+	if dependencies.PlanBuilder.TTL <= 0 {
+		dependencies.PlanBuilder = security.PlanBuilder{TTL: 5 * time.Minute}
+	}
+	return &Server{broker: client, cfg: cfg, logger: logger, security: dependencies}
 }
 
 func (s *Server) Handler() http.Handler {
@@ -40,12 +51,15 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /", s.handleRoot)
 	mux.HandleFunc("GET /healthz", s.handleHealth)
 	mux.HandleFunc("GET /readyz", s.handleReady)
-	mux.Handle("GET /v1/control/info", s.requireAuth(http.HandlerFunc(s.handleInfo)))
-	mux.Handle("GET /v1/operations", s.requireAuth(http.HandlerFunc(s.handleOperations)))
-	mux.Handle("POST /v1/operations/plan", s.requireAuth(http.HandlerFunc(s.handlePlan)))
-	mux.Handle("POST /v1/operations/execute", s.requireAuth(http.HandlerFunc(s.handleExecute)))
-	mux.Handle("GET /v1/system/status", s.requireAuth(http.HandlerFunc(s.handleSystemStatus)))
-	mux.Handle("GET /v1/services/{unit}", s.requireAuth(http.HandlerFunc(s.handleServiceStatus)))
+	mux.Handle("GET /v1/control/info", s.requirePermission(security.PermissionControlRead, http.HandlerFunc(s.handleInfo)))
+	mux.Handle("GET /v1/operations", s.requirePermission(security.PermissionOperationCatalog, http.HandlerFunc(s.handleOperations)))
+	mux.Handle("POST /v1/operations/plan", s.requirePermission(security.PermissionOperationPlan, http.HandlerFunc(s.handlePlan)))
+	mux.Handle("POST /v1/operations/execute", s.requirePermission(security.PermissionOperationExecute, http.HandlerFunc(s.handleExecute)))
+	mux.Handle("GET /v1/system/status", s.requirePermission(security.PermissionControlRead, http.HandlerFunc(s.handleSystemStatus)))
+	mux.Handle("GET /v1/services/{unit}", s.requirePermission(security.PermissionControlRead, http.HandlerFunc(s.handleServiceStatus)))
+	mux.Handle("GET /v1/audit", s.requirePermission(security.PermissionAuditRead, http.HandlerFunc(s.handleAuditQuery)))
+	mux.Handle("GET /v1/audit/integrity", s.requirePermission(security.PermissionAuditRead, http.HandlerFunc(s.handleAuditIntegrity)))
+	mux.Handle("POST /v1/confirmations", s.requirePermission(security.PermissionConfirm, http.HandlerFunc(s.handleConfirmation)))
 	return s.withRequestID(s.logRequests(mux))
 }
 
@@ -66,12 +80,17 @@ func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (s *Server) handleReady(w http.ResponseWriter, r *http.Request) {
+	if err := s.securityReady(); err != nil {
+		s.logger.ErrorContext(r.Context(), "security subsystem unavailable", "error", err)
+		writeProblem(w, r, http.StatusServiceUnavailable, "security_unavailable", "The security subsystem is unavailable.")
+		return
+	}
 	if err := s.broker.Health(r.Context()); err != nil {
 		s.logBrokerFailure(r, "health", err)
 		writeProblem(w, r, http.StatusServiceUnavailable, "broker_unavailable", "The privileged broker is unavailable.")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"status": "ready", "broker": "qcored"})
+	writeJSON(w, http.StatusOK, map[string]any{"status": "ready", "broker": "qcored", "security": "ready"})
 }
 
 func (s *Server) handleInfo(w http.ResponseWriter, _ *http.Request) {
@@ -82,13 +101,15 @@ func (s *Server) handleInfo(w http.ResponseWriter, _ *http.Request) {
 		"build_time": buildinfo.BuildTime,
 		"broker":     "qcored",
 		"capabilities": map[string]bool{
-			"typed_operations": true,
-			"operation_plans":  true,
-			"audit_metadata":   true,
-			"system_snapshot":  true,
-			"service_status":   true,
-			"mutations":        false,
-			"web_ui":           false,
+			"typed_operations":       true,
+			"operation_plans":        true,
+			"actor_permissions":      true,
+			"confirmation_contracts": true,
+			"durable_audit":          s.security.Audit != nil,
+			"system_snapshot":        true,
+			"service_status":         true,
+			"mutations":              false,
+			"web_ui":                 false,
 		},
 	})
 }
@@ -108,16 +129,36 @@ func (s *Server) handlePlan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.prepareRequest(r, &request)
-	plan, err := s.broker.Plan(r.Context(), request)
+	brokerPlan, err := s.broker.Plan(r.Context(), request)
 	if err != nil {
 		s.brokerGatewayError(w, r, "plan", err)
 		return
 	}
-	status := http.StatusOK
-	if !plan.Valid {
-		status = http.StatusBadRequest
+	actor := actorFromContext(r.Context())
+	plan, err := s.security.PlanBuilder.Build(actor, sessionIDFromContext(r.Context()), brokerPlan)
+	if err != nil {
+		writeProblem(w, r, http.StatusInternalServerError, "plan_contract_error", "The immutable operation plan could not be created.")
+		return
 	}
-	writeJSON(w, status, plan)
+	s.security.Plans.Put(plan)
+	event := "plan.created"
+	status := "valid"
+	if actor.Kind == security.ActorTCI {
+		event = "proposal.created"
+	}
+	if !plan.Valid {
+		status = "rejected"
+	}
+	s.appendAudit(security.AuditEvent{
+		Event: event, Actor: actor, RequestID: plan.RequestID, SessionID: plan.SessionID,
+		PlanID: plan.ID, PlanDigest: plan.Digest, Action: plan.Action, Risk: plan.Risk,
+		Status: status, Parameters: security.PlanParametersMap(plan), ErrorCode: plan.ErrorCode,
+	})
+	httpStatus := http.StatusOK
+	if !plan.Valid {
+		httpStatus = http.StatusBadRequest
+	}
+	writeJSON(w, httpStatus, plan)
 }
 
 func (s *Server) handleExecute(w http.ResponseWriter, r *http.Request) {
@@ -131,6 +172,17 @@ func (s *Server) handleExecute(w http.ResponseWriter, r *http.Request) {
 		s.brokerGatewayError(w, r, "execute", err)
 		return
 	}
+	actor := actorFromContext(r.Context())
+	errorCode := ""
+	if response.Error != nil {
+		errorCode = response.Error.Code
+	}
+	s.appendAudit(security.AuditEvent{
+		Event: "operation." + response.Status, Actor: actor,
+		RequestID: response.RequestID, SessionID: sessionIDFromContext(r.Context()),
+		Action: response.Action, Risk: string(response.Risk), Status: response.Status,
+		Parameters: request.Parameters, ErrorCode: errorCode,
+	})
 	writeJSON(w, operationHTTPStatus(response.Status), response)
 }
 
@@ -138,7 +190,7 @@ func (s *Server) handleSystemStatus(w http.ResponseWriter, r *http.Request) {
 	request := protocol.OperationRequest{
 		RequestID: requestIDFromContext(r.Context()),
 		Action:    "system.snapshot",
-		Actor:     "quantum-control-api",
+		Actor:     actorFromContext(r.Context()).ID,
 	}
 	response, err := s.broker.Execute(r.Context(), request)
 	if err != nil {
@@ -157,7 +209,7 @@ func (s *Server) handleServiceStatus(w http.ResponseWriter, r *http.Request) {
 	request := protocol.OperationRequest{
 		RequestID:  requestIDFromContext(r.Context()),
 		Action:     "service.status",
-		Actor:      "quantum-control-api",
+		Actor:      actorFromContext(r.Context()).ID,
 		Parameters: map[string]string{"unit": unit},
 	}
 	response, err := s.broker.Execute(r.Context(), request)
@@ -194,32 +246,11 @@ func (s *Server) decodeOperation(w http.ResponseWriter, r *http.Request) (protoc
 }
 
 func (s *Server) prepareRequest(r *http.Request, request *protocol.OperationRequest) {
-	request.Actor = "quantum-control-api"
+	request.Actor = actorFromContext(r.Context()).ID
+	request.Confirmation = ""
 	if strings.TrimSpace(request.RequestID) == "" {
 		request.RequestID = requestIDFromContext(r.Context())
 	}
-}
-
-func (s *Server) requireAuth(next http.Handler) http.Handler {
-	if s.cfg.APIToken == "" {
-		return next
-	}
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		const prefix = "Bearer "
-		header := r.Header.Get("Authorization")
-		if !strings.HasPrefix(header, prefix) {
-			w.Header().Set("WWW-Authenticate", `Bearer realm="Quantum Control"`)
-			writeProblem(w, r, http.StatusUnauthorized, "unauthorized", "A valid bearer token is required.")
-			return
-		}
-		provided := strings.TrimSpace(strings.TrimPrefix(header, prefix))
-		if len(provided) != len(s.cfg.APIToken) || subtle.ConstantTimeCompare([]byte(provided), []byte(s.cfg.APIToken)) != 1 {
-			w.Header().Set("WWW-Authenticate", `Bearer realm="Quantum Control"`)
-			writeProblem(w, r, http.StatusUnauthorized, "unauthorized", "A valid bearer token is required.")
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
 }
 
 func (s *Server) brokerGatewayError(w http.ResponseWriter, r *http.Request, operation string, err error) {

@@ -34,11 +34,14 @@ func run(args []string) error {
 		fmt.Println(buildinfo.Version)
 		return nil
 	case "check-config":
-		_, err := config.LoadControl()
+		cfg, err := config.LoadControl()
 		if err != nil {
 			return err
 		}
-		fmt.Println("configuration valid")
+		if _, err := control.LoadSecurityDependencies(cfg); err != nil {
+			return fmt.Errorf("validate security state: %w", err)
+		}
+		fmt.Println("configuration and security state valid")
 		return nil
 	case "serve":
 		return serve()
@@ -55,8 +58,12 @@ func serve() error {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	slog.SetDefault(logger)
 
+	securityDependencies, err := control.LoadSecurityDependencies(cfg)
+	if err != nil {
+		return fmt.Errorf("initialize security state: %w", err)
+	}
 	brokerClient := broker.NewClient(cfg.BrokerSocket, cfg.BrokerToken, cfg.BrokerTimeout)
-	controlServer := control.NewServer(brokerClient, cfg, logger)
+	controlServer := control.NewServerWithSecurity(brokerClient, cfg, logger, securityDependencies)
 	server := &http.Server{
 		Addr:              cfg.Listen,
 		Handler:           controlServer,

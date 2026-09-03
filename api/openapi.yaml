@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: Quantum Control API
-  version: 0.2.0-alpha.1
-  description: Public typed administration API for Quantum Control.
+  version: 0.2.0-alpha.2
+  description: Public typed administration API with pre-mutation identity, authorization, immutable planning and durable audit contracts.
 servers:
   - url: http://127.0.0.1:17440
 paths:
@@ -10,317 +10,351 @@ paths:
     get:
       summary: Public process liveness
       responses:
-        '200':
-          description: Process is alive
+        '200': {description: Process is alive}
   /readyz:
     get:
-      summary: Broker readiness
+      summary: Broker and security readiness
       responses:
-        '200':
-          description: Broker is reachable
+        '200': {description: Broker and security subsystem are ready}
         '503':
-          description: Broker is unavailable
+          description: Broker or security subsystem unavailable
           content:
             application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorEnvelope'
+              schema: {$ref: '#/components/schemas/ErrorEnvelope'}
   /v1/control/info:
     get:
       summary: Product and capability information
-      security:
-        - bearerAuth: []
+      security: [{bearerAuth: []}]
       responses:
-        '200':
-          description: Control information
-        '401':
-          $ref: '#/components/responses/Unauthorized'
+        '200': {description: Control information}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
   /v1/components:
     get:
       summary: Read component inventory snapshot
-      description: Strictly read-only fixed probes. No caller-supplied shell text is executed.
-      security:
-        - bearerAuth: []
+      description: Requires inventory.read. Fixed read-only probes only.
+      security: [{bearerAuth: []}]
       responses:
         '200':
           description: Component inventory snapshot
           content:
             application/json:
-              schema:
-                $ref: '#/components/schemas/InventorySnapshot'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
+              schema: {$ref: '#/components/schemas/InventorySnapshot'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
         '500':
           description: Inventory could not be completed safely
           content:
             application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorEnvelope'
+              schema: {$ref: '#/components/schemas/ErrorEnvelope'}
   /v1/components/{id}:
     get:
       summary: Read one canonical component inventory record
-      security:
-        - bearerAuth: []
+      security: [{bearerAuth: []}]
       parameters:
         - in: path
           name: id
           required: true
-          schema:
-            type: string
-            pattern: '^[a-z0-9][a-z0-9-]{0,63}$'
+          schema: {type: string, pattern: '^[a-z0-9][a-z0-9-]{0,63}$'}
       responses:
         '200':
           description: Component inventory record
           content:
             application/json:
-              schema:
-                $ref: '#/components/schemas/ComponentInventory'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
+              schema: {$ref: '#/components/schemas/ComponentInventory'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
         '404':
           description: Component ID is not part of the inventory contract
           content:
             application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorEnvelope'
-        '500':
-          description: Inventory could not be completed safely
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorEnvelope'
+              schema: {$ref: '#/components/schemas/ErrorEnvelope'}
   /v1/operations:
     get:
       summary: Allowlisted operation catalog
-      security:
-        - bearerAuth: []
+      security: [{bearerAuth: []}]
       responses:
-        '200':
-          description: Operation definitions
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '502':
-          $ref: '#/components/responses/BrokerError'
+        '200': {description: Operation definitions}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '502': {$ref: '#/components/responses/BrokerError'}
   /v1/operations/plan:
     post:
-      summary: Validate and plan a typed operation
-      security:
-        - bearerAuth: []
+      summary: Create an immutable expiring operation plan or TCI proposal
+      description: Requires operations.plan. Caller actor fields are overwritten by authenticated identity.
+      security: [{bearerAuth: []}]
+      parameters:
+        - in: header
+          name: X-Quantum-Session-ID
+          required: false
+          schema: {type: string, maxLength: 160}
       requestBody:
         required: true
         content:
           application/json:
-            schema:
-              $ref: '#/components/schemas/OperationRequest'
+            schema: {$ref: '#/components/schemas/OperationRequest'}
       responses:
         '200':
-          description: Valid operation plan
+          description: Valid immutable plan
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OperationPlan'}
         '400':
-          description: Invalid or rejected operation plan
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '413':
-          description: Request body exceeds the configured limit
-        '502':
-          $ref: '#/components/responses/BrokerError'
+          description: Invalid request or rejected plan
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OperationPlan'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '413': {description: Request body exceeds the configured limit}
+        '502': {$ref: '#/components/responses/BrokerError'}
   /v1/operations/execute:
     post:
-      summary: Execute an implemented allowlisted operation
-      description: Version 0.2.0-alpha.1 contains read-only operations only.
-      security:
-        - bearerAuth: []
+      summary: Execute a current read-only allowlisted operation
+      description: Requires operations.execute.readonly. No mutating broker operations exist in 0.2.0-alpha.2.
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/OperationRequest'}
+      responses:
+        '200': {description: Operation completed}
+        '400': {description: Operation rejected by policy or validation}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '413': {description: Request body exceeds the configured limit}
+        '500': {description: Allowlisted operation failed}
+        '502': {$ref: '#/components/responses/BrokerError'}
+  /v1/confirmations:
+    post:
+      summary: Issue a short-lived single-use confirmation grant
+      description: Requires operations.confirm and an authenticated human approver. No current mutating operation consumes these grants.
+      security: [{bearerAuth: []}]
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/OperationRequest'
+              type: object
+              additionalProperties: false
+              required: [plan_id]
+              properties:
+                plan_id: {type: string, maxLength: 160}
+      responses:
+        '201':
+          description: Confirmation grant issued. Raw token is returned once and is not persisted.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/GrantResponse'}
+        '400': {description: Plan is not confirmable under current policy}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {description: Plan missing or expired}
+        '503': {description: Confirmation storage unavailable}
+  /v1/audit:
+    get:
+      summary: Read permission-scoped durable audit history
+      description: Requires audit.read. No audit mutation method exists.
+      security: [{bearerAuth: []}]
+      parameters:
+        - in: query
+          name: limit
+          schema: {type: integer, minimum: 1, maximum: 500, default: 100}
+        - in: query
+          name: actor_id
+          schema: {type: string, maxLength: 128}
+        - in: query
+          name: action
+          schema: {type: string, maxLength: 160}
       responses:
         '200':
-          description: Operation completed
-        '400':
-          description: Operation rejected by policy or validation
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '413':
-          description: Request body exceeds the configured limit
-        '500':
-          description: Allowlisted operation failed
-        '502':
-          $ref: '#/components/responses/BrokerError'
+          description: Audit records and chain integrity metadata
+        '400': {description: Invalid audit filter}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '503': {description: Durable audit unavailable}
+  /v1/audit/integrity:
+    get:
+      summary: Read durable audit chain head and verification state
+      security: [{bearerAuth: []}]
+      responses:
+        '200': {description: Audit integrity metadata}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '503': {description: Durable audit unavailable}
   /v1/system/status:
     get:
       summary: Read bounded system status
-      security:
-        - bearerAuth: []
+      security: [{bearerAuth: []}]
       responses:
-        '200':
-          description: System snapshot
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '500':
-          description: Snapshot operation failed
-        '502':
-          $ref: '#/components/responses/BrokerError'
+        '200': {description: System snapshot}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '502': {$ref: '#/components/responses/BrokerError'}
   /v1/services/{unit}:
     get:
       summary: Read systemd unit state
-      security:
-        - bearerAuth: []
+      security: [{bearerAuth: []}]
       parameters:
         - in: path
           name: unit
           required: true
-          schema:
-            type: string
-            pattern: '^[A-Za-z0-9][A-Za-z0-9_.@:-]{0,127}$'
+          schema: {type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9_.@:-]{0,127}$'}
       responses:
-        '200':
-          description: Unit state
-        '400':
-          description: Unit identifier rejected
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '500':
-          description: Status operation failed
-        '502':
-          $ref: '#/components/responses/BrokerError'
+        '200': {description: Unit state}
+        '400': {description: Unit identifier rejected}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '502': {$ref: '#/components/responses/BrokerError'}
 components:
   securitySchemes:
     bearerAuth:
       type: http
       scheme: bearer
-      description: Optional on loopback, mandatory for every non-loopback listener. Minimum 32 characters when configured.
+      description: Actor token. Remote listeners require a credential source. Loopback may use a restricted read-only bootstrap actor when no credential source is configured.
   responses:
     Unauthorized:
-      description: Valid bearer token required
+      description: Valid actor credential required
       content:
         application/json:
-          schema:
-            $ref: '#/components/schemas/ErrorEnvelope'
+          schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+    Forbidden:
+      description: Authenticated actor lacks the required permission
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ErrorEnvelope'}
     BrokerError:
       description: Privileged broker transport failed
       content:
         application/json:
-          schema:
-            $ref: '#/components/schemas/ErrorEnvelope'
+          schema: {$ref: '#/components/schemas/ErrorEnvelope'}
   schemas:
-    InventorySnapshot:
+    Actor:
       type: object
-      required: [schema, observed_at, components]
-      additionalProperties: false
+      required: [id, kind, display_name, roles, permissions]
       properties:
-        schema:
-          type: string
-          const: quantum.control/component-inventory/v1alpha1
-        observed_at:
-          type: string
-          format: date-time
-        components:
-          type: array
-          items:
-            $ref: '#/components/schemas/ComponentInventory'
-    ComponentInventory:
-      type: object
-      required: [id, name, category, version, ownership, health, services, listeners, roots, capabilities, evidence, observed_at, warnings]
-      additionalProperties: false
-      properties:
-        id:
-          type: string
-          pattern: '^[a-z0-9][a-z0-9-]{0,63}$'
-        name:
-          type: string
-        category:
-          type: string
-        version:
-          type: string
-        ownership:
-          type: string
-          enum: [managed, external, disabled, unknown]
-        health:
-          type: string
-          enum: [healthy, degraded, disabled, unknown]
-        services:
-          type: array
-          items:
-            type: string
-        listeners:
-          type: array
-          items:
-            $ref: '#/components/schemas/Listener'
-        roots:
-          type: array
-          items:
-            type: string
-        capabilities:
-          type: array
-          items:
-            type: string
-        evidence:
-          type: array
-          items:
-            $ref: '#/components/schemas/InventoryEvidence'
-        observed_at:
-          type: string
-          format: date-time
-        warnings:
-          type: array
-          items:
-            type: string
-    Listener:
-      type: object
-      required: [address, port, protocol]
-      additionalProperties: false
-      properties:
-        address:
-          type: string
-        port:
-          type: integer
-          minimum: 1
-          maximum: 65535
-        protocol:
-          type: string
-    InventoryEvidence:
-      type: object
-      required: [kind, source]
-      additionalProperties: false
-      properties:
-        kind:
-          type: string
-        source:
-          type: string
-        detail:
-          type: string
+        id: {type: string}
+        kind: {type: string, enum: [human, service, tci]}
+        display_name: {type: string}
+        roles: {type: array, items: {type: string}}
+        permissions: {type: array, items: {type: string}}
     OperationRequest:
       type: object
       required: [action]
       additionalProperties: false
       properties:
-        request_id:
-          type: string
-        action:
-          type: string
+        request_id: {type: string}
+        action: {type: string}
         actor:
           type: string
-          description: Ignored and replaced by the public service.
+          description: Ignored and replaced by authenticated actor identity.
         parameters:
           type: object
-          additionalProperties:
-            type: string
+          additionalProperties: {type: string}
         confirmation:
           type: string
+          description: Legacy field. Cleared by the public service and never sufficient for confirmation-required execution.
+    OperationPlan:
+      type: object
+      required: [schema, id, digest, request_id, session_id, actor, action, parameters, risk, requires_confirmation, valid, created_at, expires_at]
+      properties:
+        schema: {type: string, const: quantum.control/operation-plan/v1alpha1}
+        id: {type: string}
+        digest: {type: string, pattern: '^[0-9a-f]{64}$'}
+        request_id: {type: string}
+        session_id: {type: string}
+        actor: {$ref: '#/components/schemas/Actor'}
+        action: {type: string}
+        parameters:
+          type: array
+          items:
+            type: object
+            required: [name, value]
+            properties:
+              name: {type: string}
+              value: {type: string}
+        risk: {type: string}
+        requires_confirmation: {type: boolean}
+        valid: {type: boolean}
+        created_at: {type: string, format: date-time}
+        expires_at: {type: string, format: date-time}
+        error_code: {type: string}
+    ConfirmationGrant:
+      type: object
+      required: [schema, id, plan_id, plan_digest, subject_actor_id, approver, action, issued_at, expires_at]
+      properties:
+        schema: {type: string, const: quantum.control/confirmation-grant/v1alpha1}
+        id: {type: string}
+        plan_id: {type: string}
+        plan_digest: {type: string, pattern: '^[0-9a-f]{64}$'}
+        subject_actor_id: {type: string}
+        approver: {$ref: '#/components/schemas/Actor'}
+        action: {type: string}
+        issued_at: {type: string, format: date-time}
+        expires_at: {type: string, format: date-time}
+        used_at: {type: string, format: date-time}
+    GrantResponse:
+      type: object
+      required: [grant, token]
+      properties:
+        grant: {$ref: '#/components/schemas/ConfirmationGrant'}
+        token:
+          type: string
+          description: One-time raw token returned to the caller. Only its SHA-256 digest is persisted.
+    InventorySnapshot:
+      type: object
+      required: [schema, observed_at, components]
+      additionalProperties: false
+      properties:
+        schema: {type: string, const: quantum.control/component-inventory/v1alpha1}
+        observed_at: {type: string, format: date-time}
+        components:
+          type: array
+          items: {$ref: '#/components/schemas/ComponentInventory'}
+    ComponentInventory:
+      type: object
+      required: [id, name, category, version, ownership, health, services, listeners, roots, capabilities, evidence, observed_at, warnings]
+      additionalProperties: false
+      properties:
+        id: {type: string, pattern: '^[a-z0-9][a-z0-9-]{0,63}$'}
+        name: {type: string}
+        category: {type: string}
+        version: {type: string}
+        ownership: {type: string, enum: [managed, external, disabled, unknown]}
+        health: {type: string, enum: [healthy, degraded, disabled, unknown]}
+        services: {type: array, items: {type: string}}
+        listeners:
+          type: array
+          items:
+            type: object
+            required: [address, port, protocol]
+            properties:
+              address: {type: string}
+              port: {type: integer, minimum: 1, maximum: 65535}
+              protocol: {type: string}
+        roots: {type: array, items: {type: string}}
+        capabilities: {type: array, items: {type: string}}
+        evidence:
+          type: array
+          items:
+            type: object
+            required: [kind, source]
+            properties:
+              kind: {type: string}
+              source: {type: string}
+              detail: {type: string}
+        observed_at: {type: string, format: date-time}
+        warnings: {type: array, items: {type: string}}
     Problem:
       type: object
       required: [code, message]
       properties:
-        code:
-          type: string
-        message:
-          type: string
+        code: {type: string}
+        message: {type: string}
     ErrorEnvelope:
       type: object
       required: [error, request_id]
       properties:
-        error:
-          $ref: '#/components/schemas/Problem'
-        request_id:
-          type: string
+        error: {$ref: '#/components/schemas/Problem'}
+        request_id: {type: string}

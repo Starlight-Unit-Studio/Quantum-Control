@@ -1,0 +1,25 @@
+{
+  "schema": "quantum.control/actors/v1alpha1",
+  "actors": [
+    {
+      "actor": {
+        "id": "human:administrator",
+        "kind": "human",
+        "display_name": "Local Administrator",
+        "roles": ["approver"],
+        "permissions": []
+      },
+      "token_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "actor": {
+        "id": "tci:quantum",
+        "kind": "tci",
+        "display_name": "Quantum TCI",
+        "roles": ["tci-proposer"],
+        "permissions": []
+      },
+      "token_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    }
+  ]
+}

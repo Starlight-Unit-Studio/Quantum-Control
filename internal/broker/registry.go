@@ -75,9 +75,11 @@ func (r *Registry) Catalog() []protocol.OperationDefinition {
 	return definitions
 }
 
-// Plan validates a request without executing it.
+// Plan validates a request without executing it. A confirmation-required
+// operation may be planned without a grant so a human can review the immutable
+// plan snapshot before any future execution path is considered.
 func (r *Registry) Plan(request protocol.OperationRequest) protocol.OperationPlan {
-	operation, problem := r.validate(request)
+	operation, problem := r.validate(request, false)
 	if problem != nil {
 		return protocol.OperationPlan{
 			Request: request,
@@ -93,7 +95,9 @@ func (r *Registry) Plan(request protocol.OperationRequest) protocol.OperationPla
 	}
 }
 
-// Execute validates and runs one registered operation.
+// Execute validates and runs one registered operation. Confirmation-required
+// operations fail closed until qcored has a verifier for the durable structured
+// grant contract. A caller-provided string can never satisfy that boundary.
 func (r *Registry) Execute(ctx context.Context, request protocol.OperationRequest) protocol.OperationResponse {
 	started := time.Now().UTC()
 	response := protocol.OperationResponse{
@@ -107,7 +111,7 @@ func (r *Registry) Execute(ctx context.Context, request protocol.OperationReques
 		response.RequestID = newID("request")
 	}
 
-	operation, problem := r.validate(request)
+	operation, problem := r.validate(request, true)
 	if problem != nil {
 		response.Error = problem
 		response.FinishedAt = time.Now().UTC()
@@ -127,7 +131,7 @@ func (r *Registry) Execute(ctx context.Context, request protocol.OperationReques
 	return response
 }
 
-func (r *Registry) validate(request protocol.OperationRequest) (registeredOperation, *protocol.Problem) {
+func (r *Registry) validate(request protocol.OperationRequest, execution bool) (registeredOperation, *protocol.Problem) {
 	action := strings.TrimSpace(request.Action)
 	if action == "" {
 		return registeredOperation{}, &protocol.Problem{Code: "invalid_action", Message: "action is required"}
@@ -139,8 +143,11 @@ func (r *Registry) validate(request protocol.OperationRequest) (registeredOperat
 	if !operation.definition.Implemented {
 		return registeredOperation{}, &protocol.Problem{Code: "not_implemented", Message: "action is not implemented"}
 	}
-	if operation.definition.RequiresConfirmation && strings.TrimSpace(request.Confirmation) == "" {
-		return registeredOperation{}, &protocol.Problem{Code: "confirmation_required", Message: "operation requires explicit confirmation"}
+	if execution && operation.definition.RequiresConfirmation {
+		return registeredOperation{}, &protocol.Problem{
+			Code:    "confirmation_verifier_required",
+			Message: "confirmation-required operation execution is disabled until the structured grant verifier is connected",
+		}
 	}
 
 	allowed := make(map[string]protocol.ParameterDefinition, len(operation.definition.Parameters))
