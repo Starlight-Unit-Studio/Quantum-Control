@@ -1,0 +1,27 @@
+# Build output
+/bin/
+/dist/
+/qcored
+/quantum-control
+*.exe
+*.test
+*.out
+
+# Local configuration and secrets
+.env
+.env.*
+!*.env.example
+/config/quantum-control.env
+/config/qcored.env
+
+# Runtime state
+/var/
+/logs/
+*.sock
+*.pid
+
+# Editor and OS files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
