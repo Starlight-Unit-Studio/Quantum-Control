@@ -1,5 +1,38 @@
 # Changelog
 
+## 0.2.0-alpha.2
+
+Pre-mutation identity, authorization, plan, confirmation and durable audit foundation.
+
+### Added
+
+- versioned actor, immutable operation-plan, confirmation-grant and audit-record contracts
+- authenticated actor kinds for human, service and future TCI clients
+- fixed roles expanded into explicit server-side permission scopes
+- optional actor registry containing SHA-256 bearer-token digests instead of raw tokens
+- immutable time-limited operation plans with canonical SHA-256 digests over exact actor/action/parameter/correlation/risk state
+- durable single-use confirmation grants bound to one plan digest, subject actor and action
+- mandatory human approver identity for confirmation grants
+- append-only JSONL audit with sequence numbers, hash-chain integrity and startup verification
+- permission-scoped `GET /v1/audit` and `GET /v1/audit/integrity`
+- `POST /v1/confirmations` for eligible cached confirmation-required plans
+- optional validated `X-Quantum-Session-ID` correlation
+- systemd protected `StateDirectory=quantum-control`
+- security threat-model, audit retention/export/recovery and contract documentation
+- actor registry example with deliberately unusable placeholder token digests
+
+### Security posture
+
+- TCI actors may read permitted state and create proposals but cannot execute current operations or mint confirmations
+- caller-supplied actor fields are overwritten by authenticated identity
+- secret-like operation parameters are redacted from durable audit
+- raw confirmation tokens are never persisted, only SHA-256 digests
+- grant replay remains rejected after process restart
+- audit tampering causes startup verification to fail closed
+- confirmation-required broker operations cannot execute until a structured grant verifier is explicitly wired into `qcored`
+- arbitrary legacy `confirmation` strings no longer satisfy a confirmation-required broker boundary
+- no mutating service, domain, package, database or shell operation is introduced
+
 ## 0.2.0-alpha.1
 
 First read-only component inventory and adoption foundation.
@@ -63,7 +96,6 @@ Initial executable Quantum Control foundation.
 
 ### Not yet implemented
 
-- user and role management
 - mutating service operations
 - domains, reverse proxy and TLS
 - databases and containers
