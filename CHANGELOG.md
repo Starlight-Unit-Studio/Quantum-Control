@@ -19,6 +19,14 @@ Initial executable Quantum Control foundation.
 - OpenAPI, architecture, API, security and roadmap documentation
 - formatting, vet, race, build and live two-process verification
 
+### Licensing
+
+- adopted the Starlight Unit Studios Quantum Control Community Source License 1.0
+- explicitly permitted commercial hosting and managed-service operation while prohibiting sale and white-label resale of Quantum Control itself
+- added controlling German and translated English license texts
+- added license history, copyright, notice, trademark and third-party notice files
+- added CI verification that required legal files are present and internally consistent
+
 ### Security posture
 
 - no arbitrary command or shell operation
