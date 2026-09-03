@@ -1,12 +1,15 @@
 SHELL := /bin/sh
 
-.PHONY: fmt fmt-check vet test build check
+.PHONY: fmt fmt-check legal vet test build check
 
 fmt:
 	gofmt -w ./cmd ./internal
 
 fmt-check:
 	@test -z "$$(gofmt -l ./cmd ./internal)" || { echo "Go files require gofmt:"; gofmt -l ./cmd ./internal; exit 1; }
+
+legal:
+	sh scripts/verify-legal.sh
 
 vet:
 	go vet ./...
@@ -20,6 +23,7 @@ build:
 	go build -trimpath -o bin/qcored ./cmd/qcored
 
 check:
+	sh scripts/verify-legal.sh
 	test "$$(cat VERSION)" = "$$(go run ./cmd/quantum-control version)"
 	test "$$(cat VERSION)" = "$$(go run ./cmd/qcored version)"
 	@test -z "$$(gofmt -l ./cmd ./internal)" || { echo "Go files require gofmt:"; gofmt -l ./cmd ./internal; exit 1; }
