@@ -14,10 +14,10 @@ import (
 )
 
 type fakeInventoryScanner struct {
-	snapshot inventory.Snapshot
+	snapshot  inventory.Snapshot
 	component inventory.Component
-	found bool
-	err error
+	found     bool
+	err       error
 }
 
 func (f fakeInventoryScanner) Snapshot(context.Context) (inventory.Snapshot, error) {
@@ -37,9 +37,9 @@ func TestComponentInventoryRoutes(t *testing.T) {
 		Capabilities: []string{"local-inference"}, Evidence: []inventory.Evidence{}, ObservedAt: observed, Warnings: []string{},
 	}
 	fake := fakeInventoryScanner{
-		snapshot: inventory.Snapshot{Schema: inventory.SchemaVersion, ObservedAt: observed, Components: []inventory.Component{component}},
+		snapshot:  inventory.Snapshot{Schema: inventory.SchemaVersion, ObservedAt: observed, Components: []inventory.Component{component}},
 		component: component,
-		found: true,
+		found:     true,
 	}
 	old := defaultInventoryScanner
 	defaultInventoryScanner = fake
