@@ -42,22 +42,23 @@ func (s *AuditStore) Append(event AuditEvent) (AuditRecord, error) {
 	defer s.mu.Unlock()
 
 	record := AuditRecord{
-		Schema:       AuditSchema,
-		Sequence:     s.sequence + 1,
-		ID:           newSecurityID("audit"),
-		Timestamp:    s.now().UTC(),
-		Event:        sanitizeLabel(event.Event, 96),
-		Actor:        cloneActor(event.Actor),
-		RequestID:    sanitizeLabel(event.RequestID, 160),
-		SessionID:    sanitizeLabel(event.SessionID, 160),
-		PlanID:       sanitizeLabel(event.PlanID, 160),
-		PlanDigest:   sanitizeDigest(event.PlanDigest),
-		Action:       sanitizeLabel(event.Action, 160),
-		Risk:         sanitizeLabel(event.Risk, 64),
-		Status:       sanitizeLabel(event.Status, 64),
-		Parameters:   RedactParameters(event.Parameters),
-		ErrorCode:    sanitizeLabel(event.ErrorCode, 96),
-		PreviousHash: s.lastHash,
+		Schema:         AuditSchema,
+		Sequence:       s.sequence + 1,
+		ID:             newSecurityID("audit"),
+		Timestamp:      s.now().UTC(),
+		Event:          sanitizeLabel(event.Event, 96),
+		Actor:          cloneActor(event.Actor),
+		RequestID:      sanitizeLabel(event.RequestID, 160),
+		SessionID:      sanitizeLabel(event.SessionID, 160),
+		PlanID:         sanitizeLabel(event.PlanID, 160),
+		PlanDigest:     sanitizeDigest(event.PlanDigest),
+		Action:         sanitizeLabel(event.Action, 160),
+		Risk:           sanitizeLabel(event.Risk, 64),
+		Status:         sanitizeLabel(event.Status, 64),
+		RollbackStatus: sanitizeLabel(event.RollbackStatus, 64),
+		Parameters:     RedactParameters(event.Parameters),
+		ErrorCode:      sanitizeLabel(event.ErrorCode, 96),
+		PreviousHash:   s.lastHash,
 	}
 	if record.Event == "" || record.Actor.ID == "" || record.Status == "" {
 		return AuditRecord{}, errors.New("audit event, actor and status are required")
@@ -191,34 +192,47 @@ func auditHash(record AuditRecord) (string, error) {
 	}
 	sort.Slice(parameters, func(i, j int) bool { return parameters[i].Name < parameters[j].Name })
 	canonical := struct {
-		Schema       string       `json:"schema"`
-		Sequence     uint64       `json:"sequence"`
-		ID           string       `json:"id"`
-		Timestamp    string       `json:"timestamp"`
-		Event        string       `json:"event"`
-		ActorID      string       `json:"actor_id"`
-		ActorKind    ActorKind    `json:"actor_kind"`
-		Roles        []string     `json:"roles"`
-		Permissions  []Permission `json:"permissions"`
-		RequestID    string       `json:"request_id,omitempty"`
-		SessionID    string       `json:"session_id,omitempty"`
-		PlanID       string       `json:"plan_id,omitempty"`
-		PlanDigest   string       `json:"plan_digest,omitempty"`
-		Action       string       `json:"action,omitempty"`
-		Risk         string       `json:"risk,omitempty"`
-		Status       string       `json:"status"`
-		Parameters   []Parameter  `json:"parameters,omitempty"`
-		ErrorCode    string       `json:"error_code,omitempty"`
-		PreviousHash string       `json:"previous_hash"`
+		Schema         string       `json:"schema"`
+		Sequence       uint64       `json:"sequence"`
+		ID             string       `json:"id"`
+		Timestamp      string       `json:"timestamp"`
+		Event          string       `json:"event"`
+		ActorID        string       `json:"actor_id"`
+		ActorKind      ActorKind    `json:"actor_kind"`
+		Roles          []string     `json:"roles"`
+		Permissions    []Permission `json:"permissions"`
+		RequestID      string       `json:"request_id,omitempty"`
+		SessionID      string       `json:"session_id,omitempty"`
+		PlanID         string       `json:"plan_id,omitempty"`
+		PlanDigest     string       `json:"plan_digest,omitempty"`
+		Action         string       `json:"action,omitempty"`
+		Risk           string       `json:"risk,omitempty"`
+		Status         string       `json:"status"`
+		RollbackStatus string       `json:"rollback_status,omitempty"`
+		Parameters     []Parameter  `json:"parameters,omitempty"`
+		ErrorCode      string       `json:"error_code,omitempty"`
+		PreviousHash   string       `json:"previous_hash"`
 	}{
-		Schema: record.Schema, Sequence: record.Sequence, ID: record.ID,
-		Timestamp: record.Timestamp.UTC().Format(time.RFC3339Nano), Event: record.Event,
-		ActorID: record.Actor.ID, ActorKind: record.Actor.Kind,
-		Roles: append([]string{}, record.Actor.Roles...), Permissions: append([]Permission{}, record.Actor.Permissions...),
-		RequestID: record.RequestID, SessionID: record.SessionID, PlanID: record.PlanID,
-		PlanDigest: record.PlanDigest, Action: record.Action, Risk: record.Risk,
-		Status: record.Status, Parameters: parameters, ErrorCode: record.ErrorCode,
-		PreviousHash: record.PreviousHash,
+		Schema:         record.Schema,
+		Sequence:       record.Sequence,
+		ID:             record.ID,
+		Timestamp:      record.Timestamp.UTC().Format(time.RFC3339Nano),
+		Event:          record.Event,
+		ActorID:        record.Actor.ID,
+		ActorKind:      record.Actor.Kind,
+		Roles:          append([]string{}, record.Actor.Roles...),
+		Permissions:    append([]Permission{}, record.Actor.Permissions...),
+		RequestID:      record.RequestID,
+		SessionID:      record.SessionID,
+		PlanID:         record.PlanID,
+		PlanDigest:     record.PlanDigest,
+		Action:         record.Action,
+		Risk:           record.Risk,
+		Status:         record.Status,
+		RollbackStatus: record.RollbackStatus,
+		Parameters:     parameters,
+		ErrorCode:      record.ErrorCode,
+		PreviousHash:   record.PreviousHash,
 	}
 	sort.Strings(canonical.Roles)
 	sort.Slice(canonical.Permissions, func(i, j int) bool { return canonical.Permissions[i] < canonical.Permissions[j] })
