@@ -5,8 +5,8 @@
   "type": "object",
   "additionalProperties": false,
   "required": [
-    "schema", "id", "plan_id", "plan_digest", "subject_actor_id", "approver",
-    "action", "issued_at", "expires_at"
+    "schema", "id", "plan_id", "plan_digest", "subject_actor_id", "session_id",
+    "approver", "action", "issued_at", "expires_at"
   ],
   "properties": {
     "schema": {"const": "quantum.control/confirmation-grant/v1alpha1"},
@@ -14,6 +14,7 @@
     "plan_id": {"type": "string"},
     "plan_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
     "subject_actor_id": {"type": "string"},
+    "session_id": {"type": "string", "minLength": 1, "maxLength": 160},
     "approver": {
       "type": "object",
       "required": ["id", "kind", "display_name", "roles", "permissions"],
