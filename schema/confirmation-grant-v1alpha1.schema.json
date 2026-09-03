@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://starlight-unit.de/schemas/quantum-control/confirmation-grant-v1alpha1.schema.json",
+  "title": "Quantum Control Confirmation Grant v1alpha1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema", "id", "plan_id", "plan_digest", "subject_actor_id", "approver",
+    "action", "issued_at", "expires_at"
+  ],
+  "properties": {
+    "schema": {"const": "quantum.control/confirmation-grant/v1alpha1"},
+    "id": {"type": "string"},
+    "plan_id": {"type": "string"},
+    "plan_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "subject_actor_id": {"type": "string"},
+    "approver": {
+      "type": "object",
+      "required": ["id", "kind", "display_name", "roles", "permissions"],
+      "properties": {
+        "id": {"type": "string"},
+        "kind": {"const": "human"},
+        "display_name": {"type": "string"},
+        "roles": {"type": "array", "items": {"type": "string"}},
+        "permissions": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "action": {"type": "string"},
+    "issued_at": {"type": "string", "format": "date-time"},
+    "expires_at": {"type": "string", "format": "date-time"},
+    "used_at": {"type": "string", "format": "date-time"}
+  }
+}
