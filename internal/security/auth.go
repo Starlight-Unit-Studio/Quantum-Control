@@ -62,6 +62,20 @@ type Authenticator interface {
 	AuthenticateBearer(string) (Actor, bool)
 }
 
+type MultiAuthenticator []Authenticator
+
+func (m MultiAuthenticator) AuthenticateBearer(token string) (Actor, bool) {
+	for _, authenticator := range m {
+		if authenticator == nil {
+			continue
+		}
+		if actor, ok := authenticator.AuthenticateBearer(token); ok {
+			return actor, true
+		}
+	}
+	return Actor{}, false
+}
+
 type RegistryAuthenticator struct {
 	credentials []ActorCredential
 }
