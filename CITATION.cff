@@ -1,0 +1,19 @@
+cff-version: 1.2.0
+message: "If you use Quantum Control, please cite the archived software release."
+title: "Quantum Control"
+type: software
+authors:
+  - family-names: "Schildgen"
+    given-names: "Patrick"
+    affiliation: "Starlight Unit Studios"
+repository-code: "https://github.com/Starlight-Unit-Studio/Quantum-Control"
+url: "https://github.com/Starlight-Unit-Studio/Quantum-Control"
+abstract: >-
+  Quantum Control is the independent Linux and server administration platform
+  developed by Starlight Unit Studios. It provides an unprivileged control API
+  and a protected typed-operation broker for secure system administration.
+keywords:
+  - server administration
+  - hosting control
+  - Linux
+  - Starlight Unit Studios
