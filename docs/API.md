@@ -1,6 +1,6 @@
 # Quantum Control API
 
-Status: `v1` alpha subset, current implementation `0.2.0-alpha.2`
+Status: `v1` alpha subset, current implementation `0.3.0-alpha.1`
 
 Public base default: `http://127.0.0.1:17440`
 
@@ -14,30 +14,32 @@ Authorization: Bearer <actor-token>
 
 An optional actor registry maps bearer-token SHA-256 digests to explicit
 `human`, `service` or `tci` identities and fixed roles. The legacy
-`QUANTUM_CONTROL_API_TOKEN` remains a service identity for compatibility.
+`QUANTUM_CONTROL_API_TOKEN` remains a service identity for compatibility and
+never gains mutation authority.
 
 On loopback only, when neither credential source is configured, Quantum Control
-uses `service:loopback-readonly`. It can use the existing read-only operator
-surface but cannot read durable audit or issue confirmations.
+uses `service:loopback-readonly`. It can use the read-only operator surface but
+cannot read durable audit, issue confirmations or execute mutations.
 
-Caller-provided JSON `actor` fields are never trusted. Quantum Control replaces
-them with the authenticated actor ID before forwarding a typed request to
-`qcored`.
+Caller-provided JSON `actor` and legacy `confirmation` fields are never trusted.
+Quantum Control replaces the actor with the authenticated actor ID and clears
+legacy confirmation text before forwarding a typed request to `qcored`.
 
-Clients may optionally send a validated correlation header:
+Clients may optionally send:
 
 ```http
 X-Quantum-Session-ID: my-session-123
 ```
 
-It is correlation metadata, not an authentication credential.
+The session ID is bound into immutable plans and confirmation grants but is not
+an authentication credential.
 
-The internal broker API is transported over a Unix socket and requires the
-separate `X-Quantum-Broker-Token` service credential. It is not a public API.
+The internal broker API is transported over a protected Unix socket and uses a
+separate `X-Quantum-Broker-Token`. It is not a public API.
 
 ## Permission model
 
-Important permission scopes include:
+Important scopes are:
 
 ```text
 control.read
@@ -45,13 +47,16 @@ inventory.read
 operations.catalog.read
 operations.plan
 operations.execute.readonly
+operations.execute.mutate
 audit.read
 operations.confirm
 operations.propose
 ```
 
-TCI actors may receive proposal/read roles only and cannot receive
-`operations.confirm`.
+The `mutator` service role receives `operations.execute.mutate`. The human
+`approver` role receives `operations.confirm`. These are deliberately separate.
+TCI actors may receive proposal/read roles only and cannot receive either
+mutation or confirmation authority.
 
 ## Public health
 
@@ -61,42 +66,47 @@ Reports public process liveness.
 
 ### `GET /readyz`
 
-Verifies that `qcored` and the in-process security plan subsystem are ready.
+Verifies that `qcored` and the in-process operation-plan subsystem are ready.
 
 ## Product information
 
 ### `GET /v1/control/info`
 
-Requires `control.read`.
-
-Reports version and explicit capability flags.
+Requires `control.read` and reports version plus explicit capability flags.
 
 ## Read-only component inventory
 
 ### `GET /v1/components`
 
-Requires `inventory.read`.
-
-Returns a snapshot using schema `quantum.control/component-inventory/v1alpha1`.
+Requires `inventory.read` and returns
+`quantum.control/component-inventory/v1alpha1`.
 
 ### `GET /v1/components/{id}`
 
-Requires `inventory.read`.
-
-Runs only the fixed probe definition for the requested canonical component ID.
-Unknown IDs return HTTP 404 and cannot create arbitrary commands, paths or
-systemd unit probes.
+Requires `inventory.read`. Unknown IDs return HTTP 404 and cannot create
+arbitrary commands, paths or systemd probes.
 
 Ownership values remain `managed`, `external`, `disabled` and fail-safe
-`unknown`. Listener arrays remain empty when a port cannot be safely attributed.
+`unknown`.
 
 ## Operation catalog
 
 ### `GET /v1/operations`
 
-Requires `operations.catalog.read`.
+Requires `operations.catalog.read` and returns the current broker allowlist.
 
-Returns the current broker allowlist and metadata for each operation.
+Current typed operations include:
+
+```text
+system.snapshot
+service.status
+service.start
+service.stop
+service.restart
+```
+
+The final three are confirmation-required and their current allowed unit list
+contains only `quantum-runtime.service`.
 
 ## Immutable planning
 
@@ -104,35 +114,24 @@ Returns the current broker allowlist and metadata for each operation.
 
 Requires `operations.plan`.
 
-Request example:
+Example mutation proposal:
 
 ```json
 {
   "request_id": "optional-client-correlation",
-  "action": "service.status",
+  "action": "service.restart",
   "parameters": {
     "unit": "quantum-runtime.service"
   }
 }
 ```
 
-The response is no longer merely the broker validation object. Quantum Control
-returns `quantum.control/operation-plan/v1alpha1`, including:
+Quantum Control returns `quantum.control/operation-plan/v1alpha1` containing the
+plan ID, SHA-256 digest, authenticated actor, request/session correlation,
+canonical parameters, risk, confirmation requirement, validity and time bounds.
 
-- plan ID
-- canonical SHA-256 digest
-- authenticated actor
-- request/session correlation
-- exact canonical parameter list
-- risk class
-- confirmation requirement
-- validity and stable rejection code
-- creation and expiry timestamps
-
-The digest changes if actor, action, parameters or bound plan metadata change.
-
-For a TCI actor, a successful planning request is treated as a proposal and is
-audited distinctly from a human/service plan.
+The digest changes if actor, action, parameters, correlation or bound policy
+metadata change. TCI plans are audited as proposals.
 
 ## Read-only execution
 
@@ -140,20 +139,15 @@ audited distinctly from a human/service plan.
 
 Requires `operations.execute.readonly`.
 
-In `0.2.0-alpha.2`, every implemented broker operation remains read-only.
-TCI proposal roles do not include this permission.
+This route remains for read-only operations. A confirmation-required operation
+submitted here is rejected by `qcored`; a caller-controlled string cannot
+promote it into a mutation.
 
-The caller's legacy `confirmation` string is cleared by the public service and
-cannot become authority. `qcored` also rejects every operation marked
-`requires_confirmation` until a structured confirmation-grant verifier is
-explicitly connected with a future reviewed mutation.
-
-## Confirmation grants
+## Human confirmation
 
 ### `POST /v1/confirmations`
 
-Requires `operations.confirm`, which is available only through a human approver
-role in v1alpha1.
+Requires the human-only `operations.confirm` permission.
 
 ```json
 {
@@ -161,16 +155,81 @@ role in v1alpha1.
 }
 ```
 
-The referenced plan must still exist, be valid, require confirmation and have a
-valid digest. The approver must be an authenticated human and must be distinct
-from the subject actor under the current policy.
+The public process looks up the cached plan and forwards the exact plan plus the
+authenticated approver credential over the protected broker socket. `qcored`
+then independently:
 
-The response contains the grant metadata plus a random raw token. The raw token
-is returned once and never stored. Durable state contains only its SHA-256
-digest. Grants are short-lived and single-use.
+- authenticates the approver
+- verifies the human confirmation permission
+- revalidates the plan schema, digest, expiry and current operation policy
+- rejects self-approval under v1alpha1 policy
+- creates one short-lived single-use grant in root-owned state
 
-There are currently no mutating broker operations that consume these grants.
-The contract is implemented before mutations on purpose.
+The raw confirmation token is returned once. Only its SHA-256 digest is stored.
+
+## Approved mutation execution
+
+### `POST /v1/operations/execute-approved`
+
+Requires `operations.execute.mutate`.
+
+```json
+{
+  "plan_id": "plan-...",
+  "confirmation_token": "<single-use token>"
+}
+```
+
+The public process retrieves the exact cached plan. `qcored` independently
+authenticates the mutation executor, verifies mutation permission, revalidates
+the plan and current allowlist, then atomically consumes the grant before any
+privileged adapter is invoked.
+
+A grant is bound to the plan ID/digest, plan actor, session and action. Exact
+normalized parameters are part of the plan digest. Changed actor, session,
+action, parameters, expiry or current policy fail closed.
+
+The grant remains consumed after success or failure. A transport failure after
+the request has been submitted is reported as an unknown outcome and is never
+automatically retried.
+
+## Service mutation operations
+
+### `service.start`
+
+Risk: `low`, confirmation required.
+
+### `service.stop`
+
+Risk: `high`, confirmation required.
+
+### `service.restart`
+
+Risk: `low`, confirmation required.
+
+All three currently accept exactly:
+
+```json
+{
+  "unit": "quantum-runtime.service"
+}
+```
+
+The privileged adapter uses only fixed vectors equivalent to:
+
+```text
+systemctl start -- quantum-runtime.service
+systemctl stop -- quantum-runtime.service
+systemctl restart -- quantum-runtime.service
+```
+
+No shell is involved. A deployment policy may remove the Runtime unit but may
+not add another systemd unit.
+
+Before the action, `qcored` captures service state. Afterward it waits for the
+required active/inactive postcondition. Active Runtime postconditions also
+require HTTP 200 from the fixed loopback health endpoint. Results include
+bounded recovery metadata. See `docs/SERVICE-MUTATIONS.md`.
 
 ## Durable audit
 
@@ -186,18 +245,14 @@ actor_id=<exact actor ID>
 action=<exact action>
 ```
 
-Response contains current integrity metadata plus matching records.
-
 ### `GET /v1/audit/integrity`
 
-Requires `audit.read`.
+Requires `audit.read` and returns record count, chain head and verification
+state.
 
-Returns record count, current chain head hash and verification state.
-
-There is intentionally no POST, PUT, PATCH or DELETE audit endpoint.
-
-Durable records store stable error codes and redacted parameters rather than raw
-backend errors or secret values.
+There is intentionally no public audit mutation endpoint. Mutation records
+capture proposal/plan, approval, attempt, final state, stable error code and
+recovery/rollback status without storing raw secret-like parameters.
 
 ## Convenience reads
 
@@ -207,39 +262,19 @@ Requires `control.read` and executes `system.snapshot`.
 
 ### `GET /v1/services/{unit}`
 
-Requires `control.read` and executes `service.status` after broker-side unit
-validation.
+Requires `control.read` and executes read-only `service.status` after broker-side
+unit validation.
 
-## Current broker operations
-
-### `system.snapshot`
-
-Risk: `read-only`
-
-Parameters: none.
-
-### `service.status`
-
-Risk: `read-only`
-
-Parameters:
-
-```json
-{
-  "unit": "quantum-runtime.service"
-}
-```
-
-The unit must match a strict identifier policy. It is passed to a fixed
-`systemctl show` argument vector and never to a shell.
-
-## Current write surface
+## Explicitly unsupported write surface
 
 ```text
-service restart:       not implemented
-domain changes:        not implemented
-TLS changes:           not implemented
-database changes:      not implemented
-package changes:       not implemented
-shell execution:       permanently unsupported
+quantum-control self-restart: unsupported
+Ollama mutation:               unsupported
+arbitrary systemd units:       unsupported
+domain/reverse proxy changes:  unsupported
+TLS changes:                   unsupported
+database changes:              unsupported
+package changes:               unsupported
+container lifecycle changes:   unsupported
+shell execution:               permanently unsupported
 ```
