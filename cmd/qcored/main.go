@@ -15,6 +15,8 @@ import (
 	"github.com/Starlight-Unit-Studio/Quantum-Control/internal/broker"
 	"github.com/Starlight-Unit-Studio/Quantum-Control/internal/buildinfo"
 	"github.com/Starlight-Unit-Studio/Quantum-Control/internal/config"
+	"github.com/Starlight-Unit-Studio/Quantum-Control/internal/security"
+	"github.com/Starlight-Unit-Studio/Quantum-Control/internal/servicecontrol"
 	"github.com/Starlight-Unit-Studio/Quantum-Control/internal/systemprobe"
 )
 
@@ -35,14 +37,21 @@ func run(args []string) error {
 		fmt.Println(buildinfo.Version)
 		return nil
 	case "check-config":
-		_, err := config.LoadBroker()
+		cfg, err := config.LoadBroker()
 		if err != nil {
 			return err
 		}
-		fmt.Println("configuration valid")
+		if _, _, err := loadMutationSecurity(cfg); err != nil {
+			return err
+		}
+		fmt.Println("configuration and privileged security state valid")
 		return nil
 	case "catalog":
-		return json.NewEncoder(os.Stdout).Encode(broker.NewRegistry(systemprobe.Native{}).Catalog())
+		registry := broker.NewRegistry(systemprobe.Native{})
+		if err := registry.EnableServiceMutations(servicecontrol.Native{}, servicecontrol.HTTPHealth{}, servicecontrol.DefaultPolicy(), 30*time.Second, 250*time.Millisecond); err != nil {
+			return err
+		}
+		return json.NewEncoder(os.Stdout).Encode(registry.Catalog())
 	case "serve":
 		return serve()
 	default:
@@ -58,22 +67,27 @@ func serve() error {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	slog.SetDefault(logger)
 
+	boundary, policy, err := loadMutationSecurity(cfg)
+	if err != nil {
+		return fmt.Errorf("initialize privileged security state: %w", err)
+	}
+	registry := broker.NewRegistry(systemprobe.Native{})
+	if err := registry.EnableServiceMutations(servicecontrol.Native{}, servicecontrol.HTTPHealth{}, policy, cfg.TransactionTimeout, cfg.ServicePollInterval); err != nil {
+		return fmt.Errorf("initialize service mutation registry: %w", err)
+	}
 	listener, err := broker.ListenUnix(cfg.SocketPath)
 	if err != nil {
 		return err
 	}
 	defer listener.Close()
-
-	registry := broker.NewRegistry(systemprobe.Native{})
 	server := &http.Server{
-		Handler:           broker.NewServer(registry, cfg.BrokerToken, cfg.RequestBodyLimit, logger).Handler(),
+		Handler:           broker.NewServerWithSecurity(registry, cfg.BrokerToken, cfg.RequestBodyLimit, logger, boundary).Handler(),
 		ReadHeaderTimeout: cfg.HeaderTimeout,
-		ReadTimeout:       15 * time.Second,
-		WriteTimeout:      20 * time.Second,
+		ReadTimeout:       cfg.TransactionTimeout + 10*time.Second,
+		WriteTimeout:      cfg.TransactionTimeout + 15*time.Second,
 		IdleTimeout:       cfg.IdleTimeout,
 		MaxHeaderBytes:    1 << 20,
 	}
-
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	errCh := make(chan error, 1)
@@ -85,7 +99,6 @@ func serve() error {
 		}
 		errCh <- nil
 	}()
-
 	select {
 	case err := <-errCh:
 		return err
@@ -97,4 +110,24 @@ func serve() error {
 		}
 		return <-errCh
 	}
+}
+
+func loadMutationSecurity(cfg config.Broker) (broker.SecurityBoundary, servicecontrol.Policy, error) {
+	policy, err := servicecontrol.LoadPolicy(cfg.ServicePolicyFile)
+	if err != nil {
+		return broker.SecurityBoundary{}, servicecontrol.Policy{}, err
+	}
+	grants, err := security.OpenGrantStore(cfg.GrantPath, cfg.GrantTTL)
+	if err != nil {
+		return broker.SecurityBoundary{}, servicecontrol.Policy{}, fmt.Errorf("open broker confirmation store: %w", err)
+	}
+	var authenticator security.Authenticator
+	if cfg.ActorFile != "" {
+		registry, err := security.LoadActorRegistry(cfg.ActorFile)
+		if err != nil {
+			return broker.SecurityBoundary{}, servicecontrol.Policy{}, fmt.Errorf("load broker actor registry: %w", err)
+		}
+		authenticator = registry
+	}
+	return broker.SecurityBoundary{Actors: authenticator, Grants: grants}, policy, nil
 }
