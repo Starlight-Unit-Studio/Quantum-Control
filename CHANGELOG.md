@@ -1,5 +1,38 @@
 # Changelog
 
+## 0.3.0-alpha.1
+
+First confirmation-gated privileged service mutation milestone.
+
+### Added
+
+- typed `service.start`, `service.stop` and `service.restart` operations
+- compiled mutation allowlist initially limited to `quantum-runtime.service`
+- optional deployment policy that can narrow but never broaden the compiled service allowlist
+- dedicated `operations.execute.mutate` permission and `mutator` service role, separate from human approval authority
+- root-owned `qcored` confirmation-grant state under `/var/lib/quantum-control-broker`
+- broker-side actor authentication for human approvals and mutation execution
+- broker-side revalidation of immutable plan schema, digest, correlation, expiry, risk and exact normalized parameters
+- single-use grant consumption before the privileged action
+- fixed `systemctl <verb> -- <unit>` execution without a shell
+- precondition and postcondition service-state capture
+- bounded Quantum Runtime loopback health verification for active postconditions
+- deterministic transaction timeout and service polling
+- one defined recovery attempt toward the observed precondition when a mutation fails
+- public `POST /v1/operations/execute-approved` route gated by mutation permission
+- service-mutation policy schema and configuration example
+- tests for replay, actor/session/action/parameter tampering, stale plans, arbitrary-unit rejection, TCI denial and recovery behavior
+
+### Security posture
+
+- the TCI may still inspect and propose but cannot approve or execute mutations
+- human approvers do not automatically receive mutation-executor authority
+- ordinary read-only execution cannot satisfy a confirmation-required action with a caller-controlled string
+- the privileged broker independently authenticates the approver and executor instead of trusting the public API result
+- the grant remains consumed after success or failure so an interrupted or failed action cannot be blindly replayed
+- `quantum-control.service`, Ollama, Apache, databases and arbitrary systemd units remain outside the mutation allowlist
+- no shell, package, domain, TLS, database or container mutation is introduced
+
 ## 0.2.0-alpha.2
 
 Pre-mutation identity, authorization, plan, confirmation and durable audit foundation.
@@ -96,7 +129,6 @@ Initial executable Quantum Control foundation.
 
 ### Not yet implemented
 
-- mutating service operations
 - domains, reverse proxy and TLS
 - databases and containers
 - backups, restore and updates
