@@ -1,0 +1,6 @@
+{
+  "schema": "quantum.control/service-mutation-policy/v1alpha1",
+  "allowed_units": [
+    "quantum-runtime.service"
+  ]
+}
