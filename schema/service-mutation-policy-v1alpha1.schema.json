@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://starlight-unit.de/schemas/quantum-control/service-mutation-policy-v1alpha1.schema.json",
+  "title": "Quantum Control Service Mutation Policy v1alpha1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "allowed_units"],
+  "properties": {
+    "schema": {"const": "quantum.control/service-mutation-policy/v1alpha1"},
+    "allowed_units": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"enum": ["quantum-runtime.service"]}
+    }
+  }
+}
