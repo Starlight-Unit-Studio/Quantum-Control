@@ -13,6 +13,16 @@
     },
     {
       "actor": {
+        "id": "service:mutation-executor",
+        "kind": "service",
+        "display_name": "Approved Mutation Executor",
+        "roles": ["mutator"],
+        "permissions": []
+      },
+      "token_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    },
+    {
+      "actor": {
         "id": "tci:quantum",
         "kind": "tci",
         "display_name": "Quantum TCI",
