@@ -6,7 +6,7 @@ Quantum Control is the standalone Linux and server administration platform of
 Starlight Unit Studios. It is planned as the reusable KeyHelp replacement for
 the Starlight stack and, later, as a native module of Quantum CoreOS.
 
-Current version: `0.2.0-alpha.2`
+Current version: `0.3.0-alpha.1`
 
 ## Project boundary
 
@@ -37,6 +37,8 @@ human / service / future TCI
           qcored
  privileged typed-operation broker
             |
+ root-owned grant verification
+            |
  fixed allowlisted system adapters
 ```
 
@@ -49,24 +51,29 @@ The alpha currently provides:
 - fixed roles and permission scopes derived server-side
 - TCI proposal access without execution or confirmation authority
 - immutable expiring operation plans with canonical SHA-256 digests
-- durable single-use confirmation grants bound to exact plan/actor/action state
+- durable single-use confirmation grants bound to exact plan/actor/session/action state
+- root-owned grant creation and consumption inside `qcored`
+- separate human approval and service mutation-executor permissions
 - append-only hash-chained durable audit with startup integrity verification
 - read-only permission-scoped audit API with no audit mutation endpoints
 - typed operation catalog, planning and read-only execution
 - read-only `system.snapshot` and `service.status` operations
+- confirmation-gated `service.start`, `service.stop` and `service.restart`
+- compiled mutation target currently limited to `quantum-runtime.service`
+- fixed direct `systemctl` argument vectors with no shell
+- service precondition/postcondition capture, Runtime health verification and bounded recovery
 - versioned read-only component inventory `v1alpha1`
 - authenticated `/v1/components` and `/v1/components/{id}` endpoints
 - fixed probes for KeyHelp, web servers, PHP, databases, container runtimes, Ollama, Quantum Runtime, SearXNG, Ember CoreUI and the STΛRLIGHT UNIT Game/Repack
 - deterministic `managed`, `external`, `disabled` and fail-safe `unknown` ownership states
 - bounded detection evidence, version filtering and health reporting
 - no guessed listener ports
-- systemd hardening and protected persistent state directory
+- systemd hardening and separated persistent state directories
 - fixtures, race tests and release-package CI
 
-Mutating operations are intentionally absent. Any future operation that requires
-confirmation currently fails closed in `qcored` until the structured grant
-verifier is integrated. A caller-provided free-form confirmation string can
-never satisfy that boundary.
+The service mutation surface is intentionally tiny. `quantum-control.service`,
+Ollama, Apache, databases and arbitrary systemd units cannot currently be
+started, stopped or restarted by Quantum Control.
 
 ## Quick start
 
@@ -74,7 +81,7 @@ Requirements:
 
 - Linux or another compatible Unix-like development environment
 - Go 1.23 or newer to build
-- systemd for the current `service.status` and service-state inventory probes
+- systemd for service inspection and the current service mutation adapter
 
 Create a local broker token:
 
@@ -103,8 +110,8 @@ export QUANTUM_CONTROL_BROKER_SOCKET=/tmp/quantum-control-qcored.sock
 
 The public API listens on `127.0.0.1:17440` by default. When no actor registry
 or legacy API token is configured on loopback, Quantum Control uses a local
-bootstrap identity that can access only the current read-only operator surface.
-It has no audit-read or confirmation authority.
+bootstrap identity that can access only the read-only operator surface. It has
+no audit-read, confirmation or mutation authority.
 
 ```bash
 curl http://127.0.0.1:17440/healthz
@@ -117,15 +124,57 @@ curl http://127.0.0.1:17440/v1/components/quantum-runtime
 
 ## Actors and TCI
 
-An optional actor registry can identify human administrators, integration
-services and the future Quantum TCI. The registry stores SHA-256 token digests,
-not raw bearer tokens.
+An optional actor registry identifies human administrators, integration
+services, mutation executors and the future Quantum TCI. The registry stores
+SHA-256 token digests, not raw bearer tokens.
 
 The TCI can be assigned the `tci-proposer` role to inspect permitted state and
-create an immutable operation proposal. It cannot receive the approver role,
-execute the current operation endpoint or mint a confirmation grant.
+create an immutable operation proposal. It cannot receive the `mutator` or
+`approver` role, execute the approved-mutation endpoint or mint a confirmation
+grant.
 
-See `config/actors.example.json` and `docs/SECURITY-CONTRACTS.md`.
+A human `approver` and a service `mutator` are deliberately separate roles.
+The human approval token authorizes one exact immutable plan. The privileged
+broker then independently authenticates the mutation executor and consumes the
+single-use grant before invoking the system adapter.
+
+See `config/actors.example.json`, `docs/SECURITY-CONTRACTS.md` and
+`docs/SERVICE-MUTATIONS.md`.
+
+## Transactional service control
+
+The first mutation flow is:
+
+```text
+authenticated proposer
+        |
+        v
+immutable plan
+        |
+        v
+distinct human approval
+        |
+        v
+root-owned single-use grant
+        |
+        v
+qcored revalidates plan + actor + session + action + parameters
+        |
+        v
+fixed systemctl argv for quantum-runtime.service
+        |
+        v
+postcondition + health verification
+        |
+        v
+durable audit + bounded recovery result
+```
+
+The optional deployment policy in
+`config/service-mutation-policy.example.json` may remove
+`quantum-runtime.service` from the mutation surface. It cannot add another
+service. The machine-readable policy contract is
+`schema/service-mutation-policy-v1alpha1.schema.json`.
 
 ## Durable audit
 
@@ -144,7 +193,8 @@ GET /v1/audit/integrity
 
 There is no public audit write/update/delete API. Secret-like operation
 parameters are redacted and arbitrary backend exception text is not stored in
-durable audit records. See `docs/AUDIT.md`.
+durable audit records. Mutation audit records include attempt, final result and
+recovery status. See `docs/AUDIT.md`.
 
 ## Read-only adoption inventory
 
@@ -169,7 +219,9 @@ command. Every administrative request maps to a named allowlisted action with
 individually validated parameters. Public actor fields are overwritten by the
 authenticated identity.
 
-There is no `shell.exec` operation.
+There is no `shell.exec` operation. Service mutations use a fixed
+`systemctl <verb> -- <unit>` argument vector, and the compiled mutation unit
+allowlist currently contains only `quantum-runtime.service`.
 
 ## Configuration
 
@@ -178,13 +230,15 @@ See:
 - `config/quantum-control.env.example`
 - `config/qcored.env.example`
 - `config/actors.example.json`
+- `config/service-mutation-policy.example.json`
 
 For production, both services read the same root-owned broker token file. The
 file should be owned by `root:quantum-control` with mode `0640`.
 
-The actor registry, if used, should also be protected and contain only token
-digests. Plan TTL and confirmation-grant TTL are configurable but capped at 15
-minutes.
+The actor registry should be root-protected when mutations are enabled. Both
+processes may read the same registry, while raw confirmation-grant state is
+owned only by `qcored` under `/var/lib/quantum-control-broker`. Plan TTL and
+confirmation-grant TTL are configurable but capped at 15 minutes.
 
 ## Commands
 
@@ -217,6 +271,7 @@ requests also build the amd64/arm64 release archives without publishing them.
 - `docs/DEPLOYMENT.md`
 - `docs/SECURITY.md`
 - `docs/SECURITY-CONTRACTS.md`
+- `docs/SERVICE-MUTATIONS.md`
 - `docs/AUDIT.md`
 - `docs/LICENSE-POLICY.md`
 - `api/openapi.yaml`
