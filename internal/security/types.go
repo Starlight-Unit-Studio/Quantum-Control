@@ -2,34 +2,28 @@ package security
 
 import "time"
 
-const (
-	ActorSchema = "quantum.control/actors/v1alpha1"
-	PlanSchema  = "quantum.control/operation-plan/v1alpha1"
-	GrantSchema = "quantum.control/confirmation-grant/v1alpha1"
-	AuditSchema = "quantum.control/audit-record/v1alpha1"
-)
+const ActorSchema = "quantum.control/actors/v1alpha1"
+const PlanSchema = "quantum.control/operation-plan/v1alpha1"
+const GrantSchema = "quantum.control/confirmation-grant/v1alpha1"
+const AuditSchema = "quantum.control/audit-record/v1alpha1"
 
 type ActorKind string
 
-const (
-	ActorHuman   ActorKind = "human"
-	ActorService ActorKind = "service"
-	ActorTCI     ActorKind = "tci"
-)
+const ActorHuman ActorKind = "human"
+const ActorService ActorKind = "service"
+const ActorTCI ActorKind = "tci"
 
 type Permission string
 
-const (
-	PermissionControlRead       Permission = "control.read"
-	PermissionInventoryRead     Permission = "inventory.read"
-	PermissionOperationCatalog Permission = "operations.catalog.read"
-	PermissionOperationPlan    Permission = "operations.plan"
-	PermissionOperationExecute Permission = "operations.execute.readonly"
-	PermissionOperationMutate  Permission = "operations.execute.mutate"
-	PermissionAuditRead         Permission = "audit.read"
-	PermissionConfirm          Permission = "operations.confirm"
-	PermissionTCIPropose       Permission = "operations.propose"
-)
+const PermissionControlRead Permission = "control.read"
+const PermissionInventoryRead Permission = "inventory.read"
+const PermissionOperationCatalog Permission = "operations.catalog.read"
+const PermissionOperationPlan Permission = "operations.plan"
+const PermissionOperationExecute Permission = "operations.execute.readonly"
+const PermissionOperationMutate Permission = "operations.execute.mutate"
+const PermissionAuditRead Permission = "audit.read"
+const PermissionConfirm Permission = "operations.confirm"
+const PermissionTCIPropose Permission = "operations.propose"
 
 type Actor struct {
 	ID          string       `json:"id"`
