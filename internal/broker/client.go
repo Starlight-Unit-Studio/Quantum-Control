@@ -11,11 +11,11 @@ import (
 	"time"
 
 	"github.com/Starlight-Unit-Studio/Quantum-Control/internal/protocol"
+	"github.com/Starlight-Unit-Studio/Quantum-Control/internal/security"
 )
 
 const maxBrokerResponseBytes = int64(4 << 20)
 
-// API is the broker contract consumed by the unprivileged Control process.
 type API interface {
 	Health(context.Context) error
 	Catalog(context.Context) ([]protocol.OperationDefinition, error)
@@ -23,7 +23,6 @@ type API interface {
 	Execute(context.Context, protocol.OperationRequest) (protocol.OperationResponse, error)
 }
 
-// Client talks to qcored over a Unix domain socket.
 type Client struct {
 	httpClient *http.Client
 	token      string
@@ -37,10 +36,7 @@ func NewClient(socketPath, token string, timeout time.Duration) *Client {
 			return dialer.DialContext(ctx, "unix", socketPath)
 		},
 	}
-	return &Client{
-		httpClient: &http.Client{Transport: transport, Timeout: timeout},
-		token:      token,
-	}
+	return &Client{httpClient: &http.Client{Transport: transport, Timeout: timeout}, token: token}
 }
 
 func (c *Client) Health(ctx context.Context) error {
@@ -66,29 +62,23 @@ func (c *Client) Plan(ctx context.Context, request protocol.OperationRequest) (p
 
 func (c *Client) Execute(ctx context.Context, request protocol.OperationRequest) (protocol.OperationResponse, error) {
 	var response protocol.OperationResponse
-	err := c.do(
-		ctx,
-		http.MethodPost,
-		"/v1/execute",
-		request,
-		&response,
-		true,
-		http.StatusOK,
-		http.StatusBadRequest,
-		http.StatusInternalServerError,
-	)
+	err := c.do(ctx, http.MethodPost, "/v1/execute", request, &response, true, http.StatusOK, http.StatusBadRequest, http.StatusInternalServerError)
 	return response, err
 }
 
-func (c *Client) do(
-	ctx context.Context,
-	method string,
-	path string,
-	input any,
-	output any,
-	authenticated bool,
-	acceptedStatuses ...int,
-) error {
+func (c *Client) Confirm(ctx context.Context, plan security.OperationPlan, actorToken string) (security.GrantResponse, error) {
+	var response security.GrantResponse
+	err := c.do(ctx, http.MethodPost, "/v1/confirm", confirmationEnvelope{Plan: plan, ActorToken: actorToken}, &response, true, http.StatusCreated)
+	return response, err
+}
+
+func (c *Client) ExecuteApproved(ctx context.Context, plan security.OperationPlan, confirmationToken string, actorToken string) (protocol.OperationResponse, error) {
+	var response protocol.OperationResponse
+	err := c.do(ctx, http.MethodPost, "/v1/execute-approved", approvedExecutionEnvelope{Plan: plan, ConfirmationToken: confirmationToken, ActorToken: actorToken}, &response, true, http.StatusOK, http.StatusBadRequest, http.StatusInternalServerError)
+	return response, err
+}
+
+func (c *Client) do(ctx context.Context, method string, path string, input any, output any, authenticated bool, acceptedStatuses ...int) error {
 	var body io.Reader
 	if input != nil {
 		encoded, err := json.Marshal(input)
@@ -112,7 +102,6 @@ func (c *Client) do(
 		return fmt.Errorf("broker request: %w", err)
 	}
 	defer resp.Body.Close()
-
 	data, err := io.ReadAll(io.LimitReader(resp.Body, maxBrokerResponseBytes+1))
 	if err != nil {
 		return fmt.Errorf("read broker response: %w", err)

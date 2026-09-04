@@ -59,7 +59,7 @@ func (s *GrantStore) Issue(plan OperationPlan, approver Actor) (GrantResponse, e
 	defer s.mu.Unlock()
 
 	now := s.now().UTC()
-	if !plan.Valid || !plan.RequiresConfirmation {
+	if plan.Schema != PlanSchema || !plan.Valid || !plan.RequiresConfirmation {
 		return GrantResponse{}, errors.New("plan does not require confirmation")
 	}
 	if !VerifyPlanDigest(plan) {
@@ -75,9 +75,12 @@ func (s *GrantStore) Issue(plan OperationPlan, approver Actor) (GrantResponse, e
 		return GrantResponse{}, errors.New("only an authenticated human approver may issue confirmation grants")
 	}
 	if plan.Actor.ID == approver.ID {
-		// Self-approval may be permitted by a future policy for low-risk actions,
-		// but the v1alpha1 contract deliberately requires separation of duties.
 		return GrantResponse{}, errors.New("v1alpha1 requires a distinct human approver")
+	}
+	for _, existing := range s.data.Grants {
+		if existing.Grant.PlanID == plan.ID && strings.EqualFold(existing.Grant.PlanDigest, plan.Digest) {
+			return GrantResponse{}, errors.New("a confirmation grant already exists for this plan")
+		}
 	}
 
 	raw := make([]byte, 32)
@@ -117,11 +120,17 @@ func (s *GrantStore) Consume(token string, plan OperationPlan, subjectActorID, a
 	if strings.TrimSpace(token) == "" {
 		return ConfirmationGrant{}, errors.New("confirmation token is required")
 	}
+	if plan.Schema != PlanSchema || !plan.Valid || !plan.RequiresConfirmation {
+		return ConfirmationGrant{}, errors.New("operation plan is not confirmation-executable")
+	}
 	if !VerifyPlanDigest(plan) {
 		return ConfirmationGrant{}, errors.New("plan digest verification failed")
 	}
-	provided := sha256.Sum256([]byte(token))
 	now := s.now().UTC()
+	if !plan.ExpiresAt.After(now) {
+		return ConfirmationGrant{}, errors.New("operation plan has expired")
+	}
+	provided := sha256.Sum256([]byte(token))
 	for index := range s.data.Grants {
 		stored := &s.data.Grants[index]
 		expected, err := decodeSHA256(stored.TokenSHA256)

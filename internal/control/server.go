@@ -55,6 +55,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /v1/operations", s.requirePermission(security.PermissionOperationCatalog, http.HandlerFunc(s.handleOperations)))
 	mux.Handle("POST /v1/operations/plan", s.requirePermission(security.PermissionOperationPlan, http.HandlerFunc(s.handlePlan)))
 	mux.Handle("POST /v1/operations/execute", s.requirePermission(security.PermissionOperationExecute, http.HandlerFunc(s.handleExecute)))
+	mux.Handle("POST /v1/operations/execute-approved", s.requirePermission(security.PermissionOperationMutate, http.HandlerFunc(s.handleApprovedExecute)))
 	mux.Handle("GET /v1/system/status", s.requirePermission(security.PermissionControlRead, http.HandlerFunc(s.handleSystemStatus)))
 	mux.Handle("GET /v1/services/{unit}", s.requirePermission(security.PermissionControlRead, http.HandlerFunc(s.handleServiceStatus)))
 	mux.Handle("GET /v1/audit", s.requirePermission(security.PermissionAuditRead, http.HandlerFunc(s.handleAuditQuery)))
@@ -94,6 +95,7 @@ func (s *Server) handleReady(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleInfo(w http.ResponseWriter, _ *http.Request) {
+	_, mutationCapable := s.broker.(broker.ApprovalAPI)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"service":    "quantum-control",
 		"version":    buildinfo.Version,
@@ -108,7 +110,7 @@ func (s *Server) handleInfo(w http.ResponseWriter, _ *http.Request) {
 			"durable_audit":          s.security.Audit != nil,
 			"system_snapshot":        true,
 			"service_status":         true,
-			"mutations":              false,
+			"service_mutations":      mutationCapable,
 			"web_ui":                 false,
 		},
 	})

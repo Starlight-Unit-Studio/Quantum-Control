@@ -94,6 +94,17 @@ func TestTCICanPlanButCannotExecuteOrConfirm(t *testing.T) {
 	if response.StatusCode != http.StatusForbidden {
 		t.Fatalf("TCI reached confirmation minting route: %d", response.StatusCode)
 	}
+
+	request, _ = http.NewRequest(http.MethodPost, server.URL+"/v1/operations/execute-approved", bytes.NewBufferString(`{"plan_id":"anything","confirmation_token":"forged"}`))
+	request.Header.Set("Authorization", "Bearer "+testTCIToken)
+	response, err = http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusForbidden {
+		t.Fatalf("TCI reached approved mutation route: %d", response.StatusCode)
+	}
 }
 
 func TestAuthenticatedActorOverridesCallerActorField(t *testing.T) {
@@ -121,10 +132,6 @@ func testSecurityDependencies(t *testing.T) SecurityDependencies {
 	if err != nil {
 		t.Fatal(err)
 	}
-	grants, err := security.OpenGrantStore(filepath.Join(dir, "grants.json"), 2*time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
 	auditor, err := security.NewStaticAuthenticator(
 		security.Actor{ID: "human:auditor", Kind: security.ActorHuman, DisplayName: "Auditor", Roles: []string{"auditor"}},
 		testAuditorToken,
@@ -142,7 +149,6 @@ func testSecurityDependencies(t *testing.T) SecurityDependencies {
 	return SecurityDependencies{
 		Authenticator: security.MultiAuthenticator{auditor, tci},
 		Audit:         audit,
-		Grants:        grants,
 		Plans:         security.NewPlanCache(),
 		PlanBuilder:   security.PlanBuilder{TTL: 5 * time.Minute},
 	}

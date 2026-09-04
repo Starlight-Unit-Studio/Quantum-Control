@@ -44,37 +44,60 @@ func TestControlRejectsShortAPIToken(t *testing.T) {
 	}
 }
 
-func TestControlRejectsRelativeSecurityStatePaths(t *testing.T) {
+func TestControlRejectsRelativeAuditPath(t *testing.T) {
 	cfg := validControl()
 	cfg.AuditPath = "audit.jsonl"
 	if err := cfg.Validate(); err == nil {
 		t.Fatal("Validate() accepted relative audit path")
 	}
-	cfg = validControl()
-	cfg.GrantPath = "grants.json"
-	if err := cfg.Validate(); err == nil {
-		t.Fatal("Validate() accepted relative grant path")
-	}
 }
 
-func TestControlRejectsOverlongSecurityTTL(t *testing.T) {
+func TestControlRejectsOverlongPlanTTL(t *testing.T) {
 	cfg := validControl()
 	cfg.PlanTTL = 16 * time.Minute
 	if err := cfg.Validate(); err == nil {
 		t.Fatal("Validate() accepted overlong plan TTL")
 	}
-	cfg = validControl()
-	cfg.GrantTTL = 16 * time.Minute
-	if err := cfg.Validate(); err == nil {
-		t.Fatal("Validate() accepted overlong grant TTL")
-	}
 }
 
-func TestBrokerRequiresAbsoluteSocket(t *testing.T) {
+func TestBrokerRequiresAbsoluteSecurityAndPolicyPaths(t *testing.T) {
 	cfg := validBroker()
 	cfg.SocketPath = "qcored.sock"
 	if err := cfg.Validate(); err == nil {
 		t.Fatal("Validate() accepted relative socket path")
+	}
+	cfg = validBroker()
+	cfg.GrantPath = "grants.json"
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("Validate() accepted relative grant path")
+	}
+	cfg = validBroker()
+	cfg.ActorFile = "actors.json"
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("Validate() accepted relative actor registry path")
+	}
+	cfg = validBroker()
+	cfg.ServicePolicyFile = "policy.json"
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("Validate() accepted relative service policy path")
+	}
+}
+
+func TestBrokerRejectsUnsafeMutationTiming(t *testing.T) {
+	cfg := validBroker()
+	cfg.GrantTTL = 16 * time.Minute
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("Validate() accepted overlong grant TTL")
+	}
+	cfg = validBroker()
+	cfg.TransactionTimeout = 500 * time.Millisecond
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("Validate() accepted sub-second transaction timeout")
+	}
+	cfg = validBroker()
+	cfg.ServicePollInterval = 6 * time.Second
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("Validate() accepted overlong service poll interval")
 	}
 }
 
@@ -108,9 +131,7 @@ func validControl() Control {
 	return Control{
 		Listen:           "127.0.0.1:17440",
 		AuditPath:        "/var/lib/quantum-control/audit/audit.jsonl",
-		GrantPath:        "/var/lib/quantum-control/security/grants.json",
 		PlanTTL:          5 * time.Minute,
-		GrantTTL:         2 * time.Minute,
 		BrokerSocket:     "/run/quantum-control/qcored.sock",
 		BrokerToken:      testToken,
 		RequestBodyLimit: defaultBodyLimit,
@@ -122,10 +143,14 @@ func validControl() Control {
 
 func validBroker() Broker {
 	return Broker{
-		SocketPath:       "/run/quantum-control/qcored.sock",
-		BrokerToken:      testToken,
-		RequestBodyLimit: defaultBodyLimit,
-		HeaderTimeout:    10 * time.Second,
-		IdleTimeout:      30 * time.Second,
+		SocketPath:          "/run/quantum-control/qcored.sock",
+		BrokerToken:         testToken,
+		GrantPath:           "/var/lib/quantum-control-broker/grants.json",
+		GrantTTL:            2 * time.Minute,
+		TransactionTimeout:  30 * time.Second,
+		ServicePollInterval: 250 * time.Millisecond,
+		RequestBodyLimit:    defaultBodyLimit,
+		HeaderTimeout:       10 * time.Second,
+		IdleTimeout:         30 * time.Second,
 	}
 }

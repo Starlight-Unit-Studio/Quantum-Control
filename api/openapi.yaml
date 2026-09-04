@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: Quantum Control API
-  version: 0.2.0-alpha.2
-  description: Public typed administration API with pre-mutation identity, authorization, immutable planning and durable audit contracts.
+  version: 0.3.0-alpha.1
+  description: Public typed administration API with identity, immutable planning, human confirmation, transactional service mutation and durable audit contracts.
 servers:
   - url: http://127.0.0.1:17440
 paths:
@@ -110,8 +110,8 @@ paths:
         '502': {$ref: '#/components/responses/BrokerError'}
   /v1/operations/execute:
     post:
-      summary: Execute a current read-only allowlisted operation
-      description: Requires operations.execute.readonly. No mutating broker operations exist in 0.2.0-alpha.2.
+      summary: Execute a read-only allowlisted operation
+      description: Requires operations.execute.readonly. Confirmation-required mutations are rejected on this route.
       security: [{bearerAuth: []}]
       requestBody:
         required: true
@@ -119,18 +119,23 @@ paths:
           application/json:
             schema: {$ref: '#/components/schemas/OperationRequest'}
       responses:
-        '200': {description: Operation completed}
+        '200': {description: Read-only operation completed}
         '400': {description: Operation rejected by policy or validation}
         '401': {$ref: '#/components/responses/Unauthorized'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '413': {description: Request body exceeds the configured limit}
-        '500': {description: Allowlisted operation failed}
+        '500': {description: Allowlisted read operation failed}
         '502': {$ref: '#/components/responses/BrokerError'}
   /v1/confirmations:
     post:
       summary: Issue a short-lived single-use confirmation grant
-      description: Requires operations.confirm and an authenticated human approver. No current mutating operation consumes these grants.
+      description: Requires operations.confirm and an authenticated human approver. qcored independently authenticates the approver and owns grant state.
       security: [{bearerAuth: []}]
+      parameters:
+        - in: header
+          name: X-Quantum-Session-ID
+          required: false
+          schema: {type: string, maxLength: 160}
       requestBody:
         required: true
         content:
@@ -143,15 +148,51 @@ paths:
                 plan_id: {type: string, maxLength: 160}
       responses:
         '201':
-          description: Confirmation grant issued. Raw token is returned once and is not persisted.
+          description: Confirmation grant issued. Raw token is returned once and only its SHA-256 digest is persisted.
           content:
             application/json:
               schema: {$ref: '#/components/schemas/GrantResponse'}
-        '400': {description: Plan is not confirmable under current policy}
+        '400': {description: Plan is not confirmable under current broker policy}
         '401': {$ref: '#/components/responses/Unauthorized'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {description: Plan missing or expired}
-        '503': {description: Confirmation storage unavailable}
+        '503': {description: Broker confirmation subsystem unavailable}
+  /v1/operations/execute-approved:
+    post:
+      summary: Execute one approved confirmation-required service mutation
+      description: Requires operations.execute.mutate. qcored independently authenticates the executor, revalidates the exact plan and consumes the grant before invoking the privileged adapter.
+      security: [{bearerAuth: []}]
+      parameters:
+        - in: header
+          name: X-Quantum-Session-ID
+          required: false
+          schema: {type: string, maxLength: 160}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ApprovedExecutionRequest'}
+      responses:
+        '200':
+          description: Approved service mutation completed and postcondition verified
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OperationResponse'}
+        '400':
+          description: Plan/grant rejected or operation semantically rejected
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OperationResponse'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {description: Plan missing or expired}
+        '500':
+          description: Privileged action or required postcondition failed
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OperationResponse'}
+        '502': {$ref: '#/components/responses/BrokerError'}
+        '503': {description: Approved mutation subsystem unavailable}
   /v1/audit:
     get:
       summary: Read permission-scoped durable audit history
@@ -168,8 +209,7 @@ paths:
           name: action
           schema: {type: string, maxLength: 160}
       responses:
-        '200':
-          description: Audit records and chain integrity metadata
+        '200': {description: Audit records and chain integrity metadata}
         '400': {description: Invalid audit filter}
         '401': {$ref: '#/components/responses/Unauthorized'}
         '403': {$ref: '#/components/responses/Forbidden'}
@@ -225,7 +265,7 @@ components:
         application/json:
           schema: {$ref: '#/components/schemas/ErrorEnvelope'}
     BrokerError:
-      description: Privileged broker transport failed
+      description: Privileged broker transport failed or produced an ambiguous result
       content:
         application/json:
           schema: {$ref: '#/components/schemas/ErrorEnvelope'}
@@ -274,7 +314,7 @@ components:
             properties:
               name: {type: string}
               value: {type: string}
-        risk: {type: string}
+        risk: {type: string, enum: [read-only, low, high, destructive]}
         requires_confirmation: {type: boolean}
         valid: {type: boolean}
         created_at: {type: string, format: date-time}
@@ -282,13 +322,14 @@ components:
         error_code: {type: string}
     ConfirmationGrant:
       type: object
-      required: [schema, id, plan_id, plan_digest, subject_actor_id, approver, action, issued_at, expires_at]
+      required: [schema, id, plan_id, plan_digest, subject_actor_id, session_id, approver, action, issued_at, expires_at]
       properties:
         schema: {type: string, const: quantum.control/confirmation-grant/v1alpha1}
         id: {type: string}
         plan_id: {type: string}
         plan_digest: {type: string, pattern: '^[0-9a-f]{64}$'}
         subject_actor_id: {type: string}
+        session_id: {type: string}
         approver: {$ref: '#/components/schemas/Actor'}
         action: {type: string}
         issued_at: {type: string, format: date-time}
@@ -301,7 +342,30 @@ components:
         grant: {$ref: '#/components/schemas/ConfirmationGrant'}
         token:
           type: string
-          description: One-time raw token returned to the caller. Only its SHA-256 digest is persisted.
+          description: One-time raw token returned to the caller. Only its SHA-256 digest is persisted by qcored.
+    ApprovedExecutionRequest:
+      type: object
+      additionalProperties: false
+      required: [plan_id, confirmation_token]
+      properties:
+        plan_id: {type: string, maxLength: 160}
+        confirmation_token: {type: string, maxLength: 512}
+    OperationResponse:
+      type: object
+      required: [request_id, action, status, risk, started_at, finished_at, audit_id]
+      properties:
+        request_id: {type: string}
+        action: {type: string}
+        status: {type: string, enum: [completed, rejected, failed]}
+        risk: {type: string, enum: [read-only, low, high, destructive]}
+        started_at: {type: string, format: date-time}
+        finished_at: {type: string, format: date-time}
+        audit_id: {type: string}
+        result:
+          type: object
+          additionalProperties: true
+          description: Bounded operation result including service pre/postcondition and recovery_status when applicable.
+        error: {$ref: '#/components/schemas/Problem'}
     InventorySnapshot:
       type: object
       required: [schema, observed_at, components]

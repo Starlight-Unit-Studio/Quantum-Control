@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/Starlight-Unit-Studio/Quantum-Control/internal/broker"
 	"github.com/Starlight-Unit-Studio/Quantum-Control/internal/security"
 )
 
@@ -50,8 +51,13 @@ func (s *Server) handleAuditIntegrity(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (s *Server) handleConfirmation(w http.ResponseWriter, r *http.Request) {
-	if s.security.Grants == nil || s.security.Plans == nil {
-		writeProblem(w, r, http.StatusServiceUnavailable, "confirmation_unavailable", "Confirmation storage is unavailable.")
+	if s.security.Plans == nil {
+		writeProblem(w, r, http.StatusServiceUnavailable, "confirmation_unavailable", "Operation plan storage is unavailable.")
+		return
+	}
+	approvalBroker, ok := s.broker.(broker.ApprovalAPI)
+	if !ok {
+		writeProblem(w, r, http.StatusServiceUnavailable, "confirmation_unavailable", "The privileged broker does not support structured confirmations.")
 		return
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, s.cfg.RequestBodyLimit)
@@ -82,8 +88,14 @@ func (s *Server) handleConfirmation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	approver := actorFromContext(r.Context())
-	grant, err := s.security.Grants.Issue(plan, approver)
+	grant, err := approvalBroker.Confirm(r.Context(), plan, actorCredentialFromContext(r.Context()))
 	if err != nil {
+		s.logger.WarnContext(r.Context(), "broker confirmation rejected",
+			"request_id", requestIDFromContext(r.Context()),
+			"plan_id", plan.ID,
+			"approver", approver.ID,
+			"action", plan.Action,
+		)
 		writeProblem(w, r, http.StatusBadRequest, "confirmation_rejected", "The operation plan cannot be confirmed under the current policy.")
 		return
 	}

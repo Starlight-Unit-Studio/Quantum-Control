@@ -43,18 +43,27 @@ Remaining read-only/adoption work may proceed independently:
 
 ## 0.3 transactional service management
 
-The first mutating milestone may begin only after `0.2.0-alpha.2` is merged and verified.
+Implemented in `0.3.0-alpha.1`:
 
-Planned:
-
-- broker-side structured confirmation-grant verifier
+- broker-side structured confirmation-grant verification and root-owned grant state
 - explicit `service.start`, `service.stop` and `service.restart` actions
-- per-action role and confirmation policy
-- maintenance windows
-- precondition and postcondition health checks
-- durable audit records for proposal, approval, attempt and result
-- rollback/recovery behavior
-- no generic command execution
+- compiled mutation allowlist initially limited to `quantum-runtime.service`
+- deployment policy that may narrow but never broaden the compiled allowlist
+- separate human approval and mutation-executor permissions
+- TCI proposal-only boundary retained across the mutation path
+- immutable-plan revalidation inside `qcored`
+- grant consumption before privileged execution with durable replay protection
+- fixed direct `systemctl` argument vectors without shell execution
+- precondition, postcondition and Runtime health checks
+- bounded deterministic transaction timeouts and one defined recovery attempt
+- durable audit records for proposal, approval, attempt, result and recovery status
+- ambiguous transport outcomes are not automatically retried
+
+Deferred within the 0.3 line:
+
+- maintenance-window policy
+- additional explicitly reviewed Quantum/Starlight service targets
+- richer service-specific postcondition profiles
 
 ## 0.4 web and TLS management
 

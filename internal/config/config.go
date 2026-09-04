@@ -12,12 +12,14 @@ import (
 )
 
 const (
-	defaultControlListen = "127.0.0.1:17440"
-	defaultBrokerSocket  = "/run/quantum-control/qcored.sock"
-	defaultTokenFile     = "/etc/quantum-control/broker.token"
-	defaultAuditPath     = "/var/lib/quantum-control/audit/audit.jsonl"
-	defaultGrantPath     = "/var/lib/quantum-control/security/grants.json"
-	defaultBodyLimit     = int64(1 << 20)
+	defaultControlListen      = "127.0.0.1:17440"
+	defaultBrokerSocket       = "/run/quantum-control/qcored.sock"
+	defaultTokenFile          = "/etc/quantum-control/broker.token"
+	defaultAuditPath          = "/var/lib/quantum-control/audit/audit.jsonl"
+	defaultBrokerGrantPath    = "/var/lib/quantum-control-broker/grants.json"
+	defaultBodyLimit          = int64(1 << 20)
+	defaultTransactionTimeout = 30 * time.Second
+	defaultServicePoll        = 250 * time.Millisecond
 )
 
 // Control configures the unprivileged web/API process.
@@ -26,9 +28,7 @@ type Control struct {
 	APIToken         string
 	ActorFile        string
 	AuditPath        string
-	GrantPath        string
 	PlanTTL          time.Duration
-	GrantTTL         time.Duration
 	BrokerSocket     string
 	BrokerToken      string
 	RequestBodyLimit int64
@@ -39,11 +39,17 @@ type Control struct {
 
 // Broker configures qcored, the privileged typed-operation broker.
 type Broker struct {
-	SocketPath       string
-	BrokerToken      string
-	RequestBodyLimit int64
-	HeaderTimeout    time.Duration
-	IdleTimeout      time.Duration
+	SocketPath          string
+	BrokerToken         string
+	ActorFile           string
+	GrantPath           string
+	GrantTTL            time.Duration
+	ServicePolicyFile   string
+	TransactionTimeout  time.Duration
+	ServicePollInterval time.Duration
+	RequestBodyLimit    int64
+	HeaderTimeout       time.Duration
+	IdleTimeout         time.Duration
 }
 
 func LoadControl() (Control, error) {
@@ -71,19 +77,13 @@ func LoadControl() (Control, error) {
 	if err != nil {
 		return Control{}, err
 	}
-	grantTTL, err := envDuration("QUANTUM_CONTROL_GRANT_TTL", 2*time.Minute)
-	if err != nil {
-		return Control{}, err
-	}
 
 	cfg := Control{
 		Listen:           envOr("QUANTUM_CONTROL_LISTEN", defaultControlListen),
 		APIToken:         strings.TrimSpace(os.Getenv("QUANTUM_CONTROL_API_TOKEN")),
 		ActorFile:        strings.TrimSpace(os.Getenv("QUANTUM_CONTROL_ACTOR_FILE")),
 		AuditPath:        envOr("QUANTUM_CONTROL_AUDIT_PATH", defaultAuditPath),
-		GrantPath:        envOr("QUANTUM_CONTROL_GRANT_PATH", defaultGrantPath),
 		PlanTTL:          planTTL,
-		GrantTTL:         grantTTL,
 		BrokerSocket:     envOr("QUANTUM_CONTROL_BROKER_SOCKET", defaultBrokerSocket),
 		BrokerToken:      brokerToken,
 		RequestBodyLimit: bodyLimit,
@@ -114,13 +114,31 @@ func LoadBroker() (Broker, error) {
 	if err != nil {
 		return Broker{}, err
 	}
+	grantTTL, err := envDuration("QUANTUM_CONTROL_GRANT_TTL", 2*time.Minute)
+	if err != nil {
+		return Broker{}, err
+	}
+	transactionTimeout, err := envDuration("QUANTUM_CONTROL_TRANSACTION_TIMEOUT", defaultTransactionTimeout)
+	if err != nil {
+		return Broker{}, err
+	}
+	pollInterval, err := envDuration("QUANTUM_CONTROL_SERVICE_POLL_INTERVAL", defaultServicePoll)
+	if err != nil {
+		return Broker{}, err
+	}
 
 	cfg := Broker{
-		SocketPath:       envOr("QUANTUM_CONTROL_BROKER_SOCKET", defaultBrokerSocket),
-		BrokerToken:      brokerToken,
-		RequestBodyLimit: bodyLimit,
-		HeaderTimeout:    headerTimeout,
-		IdleTimeout:      idleTimeout,
+		SocketPath:          envOr("QUANTUM_CONTROL_BROKER_SOCKET", defaultBrokerSocket),
+		BrokerToken:         brokerToken,
+		ActorFile:           strings.TrimSpace(os.Getenv("QUANTUM_CONTROL_ACTOR_FILE")),
+		GrantPath:           envOr("QUANTUM_CONTROL_GRANT_PATH", defaultBrokerGrantPath),
+		GrantTTL:            grantTTL,
+		ServicePolicyFile:   strings.TrimSpace(os.Getenv("QUANTUM_CONTROL_SERVICE_POLICY_FILE")),
+		TransactionTimeout:  transactionTimeout,
+		ServicePollInterval: pollInterval,
+		RequestBodyLimit:    bodyLimit,
+		HeaderTimeout:       headerTimeout,
+		IdleTimeout:         idleTimeout,
 	}
 	if err := cfg.Validate(); err != nil {
 		return Broker{}, err
@@ -147,14 +165,8 @@ func (c Control) Validate() error {
 	if !filepath.IsAbs(c.AuditPath) {
 		return errors.New("QUANTUM_CONTROL_AUDIT_PATH must be absolute")
 	}
-	if !filepath.IsAbs(c.GrantPath) {
-		return errors.New("QUANTUM_CONTROL_GRANT_PATH must be absolute")
-	}
 	if c.PlanTTL <= 0 || c.PlanTTL > 15*time.Minute {
 		return errors.New("QUANTUM_CONTROL_PLAN_TTL must be greater than zero and at most 15 minutes")
-	}
-	if c.GrantTTL <= 0 || c.GrantTTL > 15*time.Minute {
-		return errors.New("QUANTUM_CONTROL_GRANT_TTL must be greater than zero and at most 15 minutes")
 	}
 	if c.RequestBodyLimit < 1024 {
 		return errors.New("QUANTUM_CONTROL_REQUEST_BODY_LIMIT must be at least 1024 bytes")
@@ -174,6 +186,24 @@ func (c Broker) Validate() error {
 	}
 	if len(c.BrokerToken) < 32 {
 		return errors.New("broker token must contain at least 32 characters")
+	}
+	if c.ActorFile != "" && !filepath.IsAbs(c.ActorFile) {
+		return errors.New("QUANTUM_CONTROL_ACTOR_FILE must be absolute when configured for qcored")
+	}
+	if !filepath.IsAbs(c.GrantPath) {
+		return errors.New("QUANTUM_CONTROL_GRANT_PATH must be absolute")
+	}
+	if c.GrantTTL <= 0 || c.GrantTTL > 15*time.Minute {
+		return errors.New("QUANTUM_CONTROL_GRANT_TTL must be greater than zero and at most 15 minutes")
+	}
+	if c.ServicePolicyFile != "" && !filepath.IsAbs(c.ServicePolicyFile) {
+		return errors.New("QUANTUM_CONTROL_SERVICE_POLICY_FILE must be absolute when configured")
+	}
+	if c.TransactionTimeout < time.Second || c.TransactionTimeout > 2*time.Minute {
+		return errors.New("QUANTUM_CONTROL_TRANSACTION_TIMEOUT must be between 1 second and 2 minutes")
+	}
+	if c.ServicePollInterval < 10*time.Millisecond || c.ServicePollInterval > 5*time.Second {
+		return errors.New("QUANTUM_CONTROL_SERVICE_POLL_INTERVAL must be between 10 milliseconds and 5 seconds")
 	}
 	if c.RequestBodyLimit < 1024 {
 		return errors.New("broker request body limit must be at least 1024 bytes")

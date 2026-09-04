@@ -15,7 +15,6 @@ import (
 type SecurityDependencies struct {
 	Authenticator security.Authenticator
 	Audit         *security.AuditStore
-	Grants        *security.GrantStore
 	Plans         *security.PlanCache
 	PlanBuilder   security.PlanBuilder
 }
@@ -41,10 +40,6 @@ func LoadSecurityDependencies(cfg config.Control) (SecurityDependencies, error) 
 	if err != nil {
 		return SecurityDependencies{}, fmt.Errorf("open audit store: %w", err)
 	}
-	grants, err := security.OpenGrantStore(cfg.GrantPath, cfg.GrantTTL)
-	if err != nil {
-		return SecurityDependencies{}, fmt.Errorf("open confirmation store: %w", err)
-	}
 	var authenticator security.Authenticator
 	if len(authenticators) > 0 {
 		authenticator = authenticators
@@ -52,7 +47,6 @@ func LoadSecurityDependencies(cfg config.Control) (SecurityDependencies, error) 
 	return SecurityDependencies{
 		Authenticator: authenticator,
 		Audit:         audit,
-		Grants:        grants,
 		Plans:         security.NewPlanCache(),
 		PlanBuilder:   security.PlanBuilder{TTL: cfg.PlanTTL},
 	}, nil
@@ -74,6 +68,7 @@ func defaultSecurityDependencies(cfg config.Control) SecurityDependencies {
 
 type actorContextKey struct{}
 type sessionContextKey struct{}
+type actorCredentialContextKey struct{}
 
 func actorFromContext(ctx context.Context) security.Actor {
 	actor, _ := ctx.Value(actorContextKey{}).(security.Actor)
@@ -85,9 +80,14 @@ func sessionIDFromContext(ctx context.Context) string {
 	return value
 }
 
+func actorCredentialFromContext(ctx context.Context) string {
+	value, _ := ctx.Value(actorCredentialContextKey{}).(string)
+	return value
+}
+
 func (s *Server) requirePermission(permission security.Permission, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		actor, ok := s.authenticateRequest(r)
+		actor, credential, ok := s.authenticateRequest(r)
 		if !ok {
 			w.Header().Set("WWW-Authenticate", `Bearer realm="Quantum Control"`)
 			writeProblem(w, r, http.StatusUnauthorized, "unauthorized", "A valid actor credential is required.")
@@ -106,24 +106,29 @@ func (s *Server) requirePermission(permission security.Permission, next http.Han
 		}
 		ctx := context.WithValue(r.Context(), actorContextKey{}, actor)
 		ctx = context.WithValue(ctx, sessionContextKey{}, sessionID)
+		ctx = context.WithValue(ctx, actorCredentialContextKey{}, credential)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 
-func (s *Server) authenticateRequest(r *http.Request) (security.Actor, bool) {
+func (s *Server) authenticateRequest(r *http.Request) (security.Actor, string, bool) {
 	const prefix = "Bearer "
 	header := r.Header.Get("Authorization")
 	if s.security.Authenticator == nil {
 		if strings.TrimSpace(header) != "" {
-			return security.Actor{}, false
+			return security.Actor{}, "", false
 		}
-		return security.LocalReadOnlyActor(), true
+		return security.LocalReadOnlyActor(), "", true
 	}
 	if !strings.HasPrefix(header, prefix) {
-		return security.Actor{}, false
+		return security.Actor{}, "", false
 	}
 	provided := strings.TrimSpace(strings.TrimPrefix(header, prefix))
-	return s.security.Authenticator.AuthenticateBearer(provided)
+	actor, ok := s.security.Authenticator.AuthenticateBearer(provided)
+	if !ok {
+		return security.Actor{}, "", false
+	}
+	return actor, provided, true
 }
 
 func validCorrelationID(value string) bool {

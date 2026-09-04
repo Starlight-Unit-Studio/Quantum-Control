@@ -28,6 +28,14 @@ var rolePermissions = map[string][]Permission{
 		PermissionOperationPlan,
 		PermissionOperationExecute,
 	},
+	"mutator": {
+		PermissionControlRead,
+		PermissionInventoryRead,
+		PermissionOperationCatalog,
+		PermissionOperationPlan,
+		PermissionOperationExecute,
+		PermissionOperationMutate,
+	},
 	"auditor": {
 		PermissionControlRead,
 		PermissionAuditRead,
@@ -217,6 +225,9 @@ func normalizeActor(actor *Actor) error {
 	permissions = uniquePermissions(permissions)
 	if actor.Kind == ActorTCI && HasPermission(Actor{Permissions: permissions}, PermissionConfirm) {
 		return errors.New("TCI actor may not receive confirmation permission")
+	}
+	if actor.Kind == ActorTCI && HasPermission(Actor{Permissions: permissions}, PermissionOperationMutate) {
+		return errors.New("TCI actor may not receive mutation permission")
 	}
 	actor.Roles = roles
 	actor.Permissions = permissions
